@@ -16,7 +16,10 @@ from trading_agent_system.agents.premarket_agent.news_provider import (
 )
 from trading_agent_system.core.audit import AuditLedger
 from trading_agent_system.core.config import load_yaml_config
-from trading_agent_system.core.event_bus import MemoryEventBus
+from trading_agent_system.core.event_bus import DurableEventBus
+from trading_agent_system.core.knowledge import KnowledgeStore, RagIndexer
+from trading_agent_system.core.observability import MetricsRecorder, TraceLogger
+from trading_agent_system.core.storage import JsonlEventRepository
 from trading_agent_system.agents.premarket_agent.trading_calendar import TradingCalendarService
 
 
@@ -34,7 +37,17 @@ def main() -> None:
     calendar_config = load_calendar_config(app_config)
     calendar = TradingCalendarService.from_config(calendar_config)
     audit = AuditLedger(app_config["paths"]["audit_log"])
-    agent = PremarketAgent(event_bus=MemoryEventBus(), audit=audit, providers=providers, calendar=calendar)
+    event_repository = JsonlEventRepository()
+    knowledge_store = KnowledgeStore()
+    agent = PremarketAgent(
+        event_bus=DurableEventBus(repository=event_repository),
+        audit=audit,
+        providers=providers,
+        calendar=calendar,
+        trace_logger=TraceLogger(),
+        metrics=MetricsRecorder(),
+        knowledge_indexer=RagIndexer(knowledge_store),
+    )
     report = agent.run(report_date=report_date, limit_per_source=args.limit)
     write_report(report, app_config)
     print(json.dumps(report.model_dump(mode="json"), ensure_ascii=False, indent=2))

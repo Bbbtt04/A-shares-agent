@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections import Counter
 from datetime import date, datetime, time, timedelta
 from hashlib import sha256
+from time import perf_counter
 from zoneinfo import ZoneInfo
 
 from trading_agent_system.core.audit import AuditLedger
 from trading_agent_system.core.event_bus import MemoryEventBus
+from trading_agent_system.core.knowledge import RagIndexer
+from trading_agent_system.core.observability import MetricsRecorder, TraceLogger
 from trading_agent_system.schemas import (
     PremarketCatalyst,
     PremarketNewsItem,
@@ -75,11 +78,17 @@ class PremarketAgent:
         audit: AuditLedger,
         providers: list[object],
         calendar: TradingCalendarService | None = None,
+        trace_logger: TraceLogger | None = None,
+        metrics: MetricsRecorder | None = None,
+        knowledge_indexer: RagIndexer | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.audit = audit
         self.providers = providers
         self.calendar = calendar or TradingCalendarService()
+        self.trace_logger = trace_logger
+        self.metrics = metrics
+        self.knowledge_indexer = knowledge_indexer
         self.scorer = EventScorer()
         self.clusterer = EventClusterer()
         self.theme_detector = ThemeDetector()
@@ -87,12 +96,27 @@ class PremarketAgent:
         self.scenario_builder = ScenarioBuilder()
 
     def run(self, report_date: date, limit_per_source: int = 30) -> PremarketReport:
+        run_id = make_id("pmrun")
+        started = perf_counter()
         window = self.calendar.build_window(report_date)
         self.audit.write("premarket_window_built", window)
+        self._trace(
+            run_id=run_id,
+            step="build_window",
+            status="success",
+            output_refs=[window.trading_day.isoformat()],
+            decision_summary=f"{window.window_start.isoformat()} -> {window.auction_end.isoformat()}",
+        )
         collected: list[PremarketNewsItem] = []
         statuses: list[PremarketSourceStatus] = []
         for provider in self.providers:
             result = provider.fetch(limit=limit_per_source)
+            self._metric(
+                "data_source_fetch_total",
+                1,
+                tags={"agent": "premarket", "source": result.source, "status": result.status},
+                run_id=run_id,
+            )
             self.audit.write(
                 "premarket_provider_fetched",
                 {
@@ -112,10 +136,26 @@ class PremarketAgent:
             )
 
         collected = self._dedupe(collected)
+        self._trace(
+            run_id=run_id,
+            step="collect_sources",
+            status="success",
+            output_refs=[item.item_id for item in collected[:20]],
+            decision_summary=f"collected={len(collected)}, sources={len(statuses)}",
+        )
         raw_documents = self._to_raw_documents(collected)
         events = self._to_events(collected, raw_documents, window)
         clusters = self.clusterer.cluster(events)
         self.audit.write("premarket_event_clusters_created", {"count": len(clusters)})
+        self._trace(
+            run_id=run_id,
+            step="normalize_and_cluster",
+            status="success",
+            input_refs=[document.source_id for document in raw_documents[:20]],
+            output_refs=[cluster.cluster_id for cluster in clusters[:20]],
+            evidence_ids=[event.event_id for event in events[:20]],
+            decision_summary=f"events={len(events)}, clusters={len(clusters)}",
+        )
         theme_seeds = self.theme_detector.detect(clusters)
         avoid_candidates = self.risk_filter.build_avoid_candidates(clusters)
         scenarios = self.scenario_builder.build(window, theme_seeds, avoid_candidates)
@@ -147,20 +187,101 @@ class PremarketAgent:
             instruction=instruction.model_dump(mode="json"),
         )
         report = report.model_copy(update={"markdown_report": render_premarket_markdown(report)})
-        self.event_bus.publish("premarket.raw_documents", [document.model_dump(mode="json") for document in raw_documents])
-        self.event_bus.publish("premarket.normalized_events", [event.model_dump(mode="json") for event in events])
-        self.event_bus.publish("premarket.event_clusters", [cluster.model_dump(mode="json") for cluster in clusters])
-        self.event_bus.publish("premarket.post_close_digest", post_close_digest.model_dump(mode="json"))
-        self.event_bus.publish("premarket.morning_brief", morning_brief.model_dump(mode="json"))
-        self.event_bus.publish("premarket.opening_radar", opening_radar.model_dump(mode="json"))
-        self.event_bus.publish("premarket.instructions", instruction.model_dump(mode="json"))
-        self.event_bus.publish("premarket.reports", report)
+        raw_document_payloads = [document.model_dump(mode="json") for document in raw_documents]
+        event_payloads = [event.model_dump(mode="json") for event in events]
+        cluster_payloads = [cluster.model_dump(mode="json") for cluster in clusters]
+        morning_brief_payload = morning_brief.model_dump(mode="json")
+        instruction_payload = instruction.model_dump(mode="json")
+        indexed_count = 0
+        if self.knowledge_indexer is not None:
+            records = self.knowledge_indexer.index_premarket_payload(
+                trading_day=window.trading_day,
+                raw_documents=raw_document_payloads,
+                events=event_payloads,
+                clusters=cluster_payloads,
+                morning_brief=morning_brief_payload,
+                instruction=instruction_payload,
+            )
+            indexed_count = len(records)
+            self._metric("rag_index_records_total", indexed_count, tags={"agent": "premarket"}, run_id=run_id)
+        self._trace(
+            run_id=run_id,
+            step="build_outputs",
+            status="success",
+            output_refs=[post_close_digest.digest_id, morning_brief.brief_id, opening_radar.radar_id, instruction.instruction_id],
+            evidence_ids=[event.event_id for event in events[:20]],
+            decision_summary=f"themes={len(theme_seeds)}, avoid={len(avoid_candidates)}, indexed={indexed_count}",
+        )
+        self._publish("premarket.raw_documents", raw_document_payloads, window, run_id)
+        self._publish("premarket.normalized_events", event_payloads, window, run_id, [event.event_id for event in events])
+        self._publish("premarket.event_clusters", cluster_payloads, window, run_id, [cluster.cluster_id for cluster in clusters])
+        self._publish("premarket.post_close_digest", post_close_digest.model_dump(mode="json"), window, run_id, post_close_digest.source_ids)
+        self._publish("premarket.morning_brief", morning_brief_payload, window, run_id, morning_brief.source_ids)
+        self._publish("premarket.opening_radar", opening_radar.model_dump(mode="json"), window, run_id, opening_radar.source_ids)
+        self._publish("premarket.instructions", instruction_payload, window, run_id, instruction.source_ids)
+        self._publish("premarket.reports", report, window, run_id, morning_brief.source_ids)
+        self._metric("agent_run_total", 1, tags={"agent": "premarket", "status": "success"}, run_id=run_id)
+        self._metric(
+            "agent_run_duration_ms",
+            int((perf_counter() - started) * 1000),
+            tags={"agent": "premarket"},
+            run_id=run_id,
+        )
         self.audit.write("premarket_post_close_digest_created", post_close_digest)
         self.audit.write("premarket_morning_brief_created", morning_brief)
         self.audit.write("premarket_opening_radar_created", opening_radar)
         self.audit.write("premarket_instruction_created", instruction)
         self.audit.write("premarket_report_created", report)
         return report
+
+    def _publish(
+        self,
+        topic: str,
+        event: object,
+        window: PreMarketWindow,
+        run_id: str,
+        evidence_ids: list[str] | None = None,
+    ) -> None:
+        self.event_bus.publish(
+            topic,
+            event,
+            producer="premarket_agent",
+            trading_day=window.trading_day,
+            run_id=run_id,
+            correlation_id=run_id,
+            evidence_ids=evidence_ids,
+        )
+
+    def _trace(
+        self,
+        *,
+        run_id: str,
+        step: str,
+        status: str,
+        input_refs: list[str] | None = None,
+        output_refs: list[str] | None = None,
+        evidence_ids: list[str] | None = None,
+        decision_summary: str = "",
+        error: str | None = None,
+    ) -> None:
+        if self.trace_logger is None:
+            return
+        self.trace_logger.record(
+            agent="premarket_agent",
+            step=step,
+            run_id=run_id,
+            status=status,
+            input_refs=input_refs,
+            output_refs=output_refs,
+            evidence_ids=evidence_ids,
+            decision_summary=decision_summary,
+            error=error,
+        )
+
+    def _metric(self, name: str, value: float, *, tags: dict[str, str], run_id: str) -> None:
+        if self.metrics is None:
+            return
+        self.metrics.record(name, value, tags=tags, run_id=run_id)
 
     def _filter_window(
         self,

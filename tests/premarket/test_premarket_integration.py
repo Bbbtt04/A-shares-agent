@@ -4,7 +4,10 @@ from trading_agent_system.agents.premarket_agent import PremarketAgent
 from trading_agent_system.agents.premarket_agent.news_provider import NewsProviderResult
 from trading_agent_system.agents.premarket_agent.trading_calendar import TradingCalendarService
 from trading_agent_system.core.audit import AuditLedger
-from trading_agent_system.core.event_bus import MemoryEventBus
+from trading_agent_system.core.event_bus import DurableEventBus
+from trading_agent_system.core.knowledge import KnowledgeStore, RagIndexer, RagRetriever
+from trading_agent_system.core.observability import MetricsRecorder, TraceLogger
+from trading_agent_system.core.storage import JsonlEventRepository
 from trading_agent_system.schemas import PremarketNewsItem
 
 
@@ -42,13 +45,20 @@ class LocalProvider:
 
 
 def test_premarket_agent_builds_spec_outputs(tmp_path):
-    bus = MemoryEventBus()
+    repository = JsonlEventRepository(tmp_path / "events")
+    bus = DurableEventBus(repository=repository)
     audit = AuditLedger(tmp_path / "audit.jsonl")
+    trace_logger = TraceLogger(tmp_path / "traces")
+    metrics = MetricsRecorder(tmp_path / "metrics")
+    knowledge_store = KnowledgeStore(tmp_path / "knowledge.sqlite")
     agent = PremarketAgent(
         event_bus=bus,
         audit=audit,
         providers=[LocalProvider()],
         calendar=TradingCalendarService(),
+        trace_logger=trace_logger,
+        metrics=metrics,
+        knowledge_indexer=RagIndexer(knowledge_store),
     )
 
     report = agent.run(date(2026, 6, 9), limit_per_source=5)
@@ -70,3 +80,7 @@ def test_premarket_agent_builds_spec_outputs(tmp_path):
     assert "premarket.morning_brief" in bus.all_events()
     assert "premarket.opening_radar" in bus.all_events()
     assert "premarket.instructions" in bus.all_events()
+    assert repository.load_envelopes("premarket.instructions", trading_day=date(2026, 6, 9))
+    assert trace_logger.load(agent="premarket_agent")
+    assert metrics.load(name="agent_run_total")
+    assert RagRetriever(knowledge_store).search(query="半导体", trading_day=date(2026, 6, 9), themes=["半导体"])
