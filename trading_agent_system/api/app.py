@@ -215,6 +215,26 @@ def observability_knowledge_search(
     return {"results": [result.model_dump(mode="json") for result in results]}
 
 
+@app.get("/api/risk/approval-queue")
+def risk_approval_queue(limit: int = Query(default=50, ge=1, le=500)) -> dict[str, object]:
+    repository = JsonlEventRepository(EVENT_DIR)
+    queue = []
+    for envelope in repository.load_envelopes("risk.approval_queue", limit=limit):
+        payload = dict(envelope.payload)
+        payload.update(
+            {
+                "event_id": envelope.event_id,
+                "run_id": envelope.run_id,
+                "trading_day": envelope.trading_day.isoformat() if envelope.trading_day else None,
+                "evidence_ids": envelope.evidence_ids,
+                "created_at": envelope.created_at.isoformat(),
+            }
+        )
+        queue.append(payload)
+    queue.sort(key=lambda item: item["created_at"], reverse=True)
+    return {"queue": queue[:limit]}
+
+
 @app.get("/api/market/quotes")
 def market_quotes() -> dict[str, object]:
     config = load_yaml_config(APP_CONFIG)

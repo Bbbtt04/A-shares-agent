@@ -435,6 +435,7 @@ EVENT_MODEL_BY_TOPIC = {
     "market.bars.1m": MarketBar,
     "trading.intents": TradeIntent,
     "risk.decisions": RiskDecision,
+    "risk.approval_queue": dict,
     "orders.instructions": OrderInstruction,
     "orders.submitted": BrokerOrder,
     "orders.filled": Fill,

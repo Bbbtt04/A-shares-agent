@@ -92,10 +92,15 @@ class RiskGateway:
         )
 
     def _publish_decision(self, decision: RiskDecision, intent: TradeIntent | None = None) -> RiskDecision:
-        self.event_bus.publish("risk.decisions", decision)
+        self.event_bus.publish("risk.decisions", decision, producer="risk_gateway")
         if intent is not None and decision.decision == "needs_human_approval":
             queue_item = self.state.queue_manual_review(intent, decision)
-            self.event_bus.publish("risk.approval_queue", queue_item)
+            self.event_bus.publish(
+                "risk.approval_queue",
+                queue_item,
+                producer="risk_gateway",
+                evidence_ids=intent.evidence_ids,
+            )
             self.audit.write("risk_approval_queued", queue_item)
         self.audit.write("risk_decision", decision)
         return decision
