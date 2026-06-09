@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from trading_agent_system.core.premarket import PremarketContext
 from trading_agent_system.schemas import AccountSnapshot, BrokerOrder, MarketBar, PositionSnapshot, TradeIntent
 
 
@@ -25,6 +26,8 @@ class RiskGatewayState:
     latest_bars: dict[str, MarketBar] = field(default_factory=dict)
     market_data_delay_ms: dict[str, int] = field(default_factory=dict)
     intent_seen_at: dict[str, list[datetime]] = field(default_factory=dict)
+    premarket_context: PremarketContext | None = None
+    approval_queue: list[dict[str, Any]] = field(default_factory=list)
 
     def update_account(self, account: AccountSnapshot) -> None:
         self.account = account
@@ -45,6 +48,19 @@ class RiskGatewayState:
         ]
         if order.status in {"created", "submitted", "partially_filled"}:
             self.open_orders.append(order)
+
+    def update_premarket_context(self, context: PremarketContext) -> None:
+        self.premarket_context = context
+
+    def queue_manual_review(self, intent: TradeIntent, decision: object) -> dict[str, Any]:
+        item = {
+            "queued_at": datetime.now(timezone.utc).isoformat(),
+            "intent": intent.model_dump(mode="json"),
+            "decision": decision.model_dump(mode="json") if hasattr(decision, "model_dump") else decision,
+            "premarket": intent.metadata.get("premarket", {}),
+        }
+        self.approval_queue.append(item)
+        return item
 
     def mark_intent(self, intent: TradeIntent) -> None:
         self.intent_seen_at.setdefault(intent.symbol, []).append(datetime.now(timezone.utc))

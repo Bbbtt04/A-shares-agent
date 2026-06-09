@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from trading_agent_system.core.audit import AuditLedger
 from trading_agent_system.core.event_bus import MemoryEventBus
+from trading_agent_system.core.premarket import PremarketContext
 from trading_agent_system.core.strategy_registry import StrategyRegistry
 from trading_agent_system.schemas import AccountSnapshot, IntelBrief, MarketBar, PositionSnapshot, TradeIntent
 
@@ -22,6 +23,7 @@ class IntradayAgent:
         event_bus: MemoryEventBus,
         audit: AuditLedger,
         max_market_data_delay_ms: int = 1000,
+        premarket_context: PremarketContext | None = None,
     ) -> None:
         self.watchlist = watchlist
         self.strategy_registry = strategy_registry
@@ -37,6 +39,7 @@ class IntradayAgent:
         self.intel: list[IntelBrief] = []
         self.positions: PositionSnapshot | None = None
         self.account: AccountSnapshot | None = None
+        self.premarket_context = premarket_context
 
     def ingest_bar(self, bar: MarketBar, delay_ms: int = 0) -> None:
         self.bars.setdefault(bar.symbol, []).append(bar)
@@ -50,6 +53,9 @@ class IntradayAgent:
 
     def ingest_account(self, account: AccountSnapshot) -> None:
         self.account = account
+
+    def ingest_premarket_context(self, context: PremarketContext) -> None:
+        self.premarket_context = context
 
     def scan(self) -> list[TradeIntent]:
         market_state = self.market_state_monitor.build(self.bars, self.delays_ms, self.intel)
@@ -72,7 +78,7 @@ class IntradayAgent:
             )
             self.audit.write("feature_snapshot", snapshot)
             for candidate in candidates:
-                intent = self.trade_planner.plan(candidate, snapshot, market_state, self.intel)
+                intent = self.trade_planner.plan(candidate, snapshot, market_state, self.intel, self.premarket_context)
                 if intent is None:
                     self.audit.write("trade_intent_filtered", candidate)
                     continue

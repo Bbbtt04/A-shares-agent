@@ -28,19 +28,19 @@ class RiskGateway:
             results.append(result)
             if result.status == "hard_reject":
                 decision = self._decision(intent, "rejected", 0, None, result.reason, results)
-                return self._publish_decision(decision)
+                return self._publish_decision(decision, intent)
             if result.status == "needs_human_approval":
                 decision = self._decision(intent, "needs_human_approval", 0, None, result.reason, results)
-                return self._publish_decision(decision)
+                return self._publish_decision(decision, intent)
 
         approved_quantity = self._apply_position_sizer(intent, results)
         if approved_quantity <= 0:
             decision = self._decision(intent, "rejected", 0, None, "approved_quantity_zero", results)
-            return self._publish_decision(decision)
+            return self._publish_decision(decision, intent)
 
         approved_price = intent.limit_price
         decision = self._decision(intent, "approved", approved_quantity, approved_price, "approved", results)
-        self._publish_decision(decision)
+        self._publish_decision(decision, intent)
         instruction = self.to_order_instruction(intent, decision)
         self.event_bus.publish("orders.instructions", instruction)
         self.audit.write("order_instruction_created", instruction)
@@ -91,7 +91,11 @@ class RiskGateway:
             checks=checks,
         )
 
-    def _publish_decision(self, decision: RiskDecision) -> RiskDecision:
+    def _publish_decision(self, decision: RiskDecision, intent: TradeIntent | None = None) -> RiskDecision:
         self.event_bus.publish("risk.decisions", decision)
+        if intent is not None and decision.decision == "needs_human_approval":
+            queue_item = self.state.queue_manual_review(intent, decision)
+            self.event_bus.publish("risk.approval_queue", queue_item)
+            self.audit.write("risk_approval_queued", queue_item)
         self.audit.write("risk_decision", decision)
         return decision

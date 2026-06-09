@@ -90,6 +90,36 @@ class SymbolAllowedCheck:
         return passed(self.name, "symbol_allowed")
 
 
+class PremarketConstraintCheck:
+    name = "premarket_constraints"
+
+    def run(self, intent: TradeIntent, state: RiskGatewayState) -> CheckResult:
+        context = state.premarket_context
+        if context is None or intent.side != "buy":
+            return passed(self.name, "premarket_context_not_applicable")
+        metadata = context.metadata_for(intent.symbol)
+        if metadata["blocks_new_entry"]:
+            return rejected(
+                self.name,
+                "premarket_avoid_new_entry",
+                instruction_types=metadata["matched_instruction_types"],
+                reasons=metadata["reasons"],
+                evidence_ids=metadata["evidence_ids"],
+            )
+        if metadata["requires_confirmation"]:
+            return CheckResult(
+                check_name=self.name,
+                status="needs_human_approval",
+                reason="premarket_requires_confirmation",
+                details={
+                    "instruction_types": metadata["matched_instruction_types"],
+                    "reasons": metadata["reasons"],
+                    "evidence_ids": metadata["evidence_ids"],
+                },
+            )
+        return passed(self.name, "premarket_constraints_clear", instruction_types=metadata["matched_instruction_types"])
+
+
 class BlacklistCheck:
     name = "blacklist"
 
@@ -297,6 +327,7 @@ DEFAULT_CHECKS: list[RiskCheck] = [
     MarketDataFreshnessCheck(),
     StrategyAllowedCheck(),
     SymbolAllowedCheck(),
+    PremarketConstraintCheck(),
     BlacklistCheck(),
     OrderTypeCheck(),
     PriceBandCheck(),
