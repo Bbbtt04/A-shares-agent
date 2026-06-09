@@ -142,3 +142,30 @@ def test_premarket_context_extracts_all_symbol_and_radar_constraints():
     assert context.constraints_for("300750.SZ")[0].instruction_type == "require_confirmation"
     assert context.confirmed_themes == ["机器人"]
     assert context.failed_themes == ["券商"]
+
+
+def test_intraday_accepts_intel_payload_dict_from_event_bus(tmp_path):
+    context = PremarketContext.from_report({"date": "2026-06-10"})
+    agent = _agent(tmp_path, context)
+
+    agent.ingest_intel(
+        {
+            "event_id": "intel_1",
+            "first_seen_at": "2026-06-10T01:00:00+00:00",
+            "published_at": "2026-06-10T01:00:00+00:00",
+            "symbols": ["510300.SH"],
+            "event_type": "official_policy",
+            "importance": "A",
+            "bias": "bullish",
+            "confidence": 0.7,
+            "actionability": "candidate",
+            "summary": "政策催化",
+            "evidence": [{"source": "demo"}],
+            "risk_flags": [],
+            "ttl_seconds": 21600,
+        }
+    )
+
+    intents = agent.scan()
+
+    assert len(intents) == 1

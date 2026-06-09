@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from trading_agent_system.agents.intel_agent import IntelAgent
 from trading_agent_system.agents.intraday_agent import IntradayAgent
 from trading_agent_system.core.audit import AuditLedger
 from trading_agent_system.core.config import load_yaml_config
 from trading_agent_system.core.event_bus import MemoryEventBus
+from trading_agent_system.core.premarket import PremarketContextLoader
 from trading_agent_system.core.strategy_registry import StrategyRegistry
 from trading_agent_system.schemas import AccountSnapshot, MarketBar, PositionSnapshot
 
@@ -45,12 +47,14 @@ def main() -> None:
     audit = AuditLedger(app_config["paths"]["audit_log"])
     registry = StrategyRegistry.from_config(strategy_config)
     watchlist = app_config["watchlist"]
+    premarket_context = PremarketContextLoader(Path("reports/premarket")).load_latest()
     agent = IntradayAgent(
         watchlist=watchlist,
         strategy_registry=registry,
         event_bus=bus,
         audit=audit,
         max_market_data_delay_ms=app_config["market"]["max_market_data_delay_ms"],
+        premarket_context=premarket_context,
     )
     if args.demo:
         intel = IntelAgent(bus, audit)

@@ -21,6 +21,7 @@ from trading_agent_system.core.market_data import (
     TencentMarketDataProvider,
 )
 from trading_agent_system.core.observability import MetricsRecorder, TraceLogger
+from trading_agent_system.core.premarket import PremarketContextLoader
 from trading_agent_system.core.storage import JsonlEventRepository
 
 
@@ -162,6 +163,13 @@ def latest_premarket_report() -> dict[str, object]:
         return {"report": json.loads(reports[0].read_text(encoding="utf-8"))}
     except json.JSONDecodeError as error:
         raise HTTPException(status_code=500, detail=f"invalid premarket report: {reports[0].name}") from error
+
+
+@app.get("/api/premarket/context")
+def premarket_context_latest() -> dict[str, object]:
+    PREMARKET_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    context = PremarketContextLoader(PREMARKET_REPORT_DIR).load_latest()
+    return {"context": context.model_dump(mode="json") if context else None}
 
 
 @app.get("/api/observability/events")

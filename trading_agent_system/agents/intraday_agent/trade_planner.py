@@ -37,6 +37,16 @@ class TradePlanner:
         entry_reason = list(candidate.reasons)
         for reason in premarket_metadata.get("reasons", []):
             entry_reason.append(f"盘前约束: {reason}")
+        theme_metadata = {
+            "primary_theme": snapshot.features.get("primary_theme", ""),
+            "theme_strength": snapshot.features.get("theme_strength", 0.0),
+            "theme_confirmation": snapshot.features.get("theme_confirmation", False),
+            "theme_peer_count": snapshot.features.get("theme_peer_count", 0.0),
+        }
+        if theme_metadata["primary_theme"] and theme_metadata["theme_confirmation"]:
+            entry_reason.append(
+                f"板块联动: {theme_metadata['primary_theme']} 强度 {float(theme_metadata['theme_strength']):.2%}"
+            )
         return TradeIntent(
             strategy_id=candidate.strategy_id,
             strategy_version=candidate.strategy_version,
@@ -54,6 +64,7 @@ class TradePlanner:
                 "risk_flags": risk_flags,
                 "spread_bps": snapshot.features.get("spread_bps", 0),
                 "premarket": premarket_metadata,
+                "theme": theme_metadata,
             },
         )
 

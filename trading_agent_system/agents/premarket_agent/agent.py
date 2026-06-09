@@ -10,6 +10,7 @@ from trading_agent_system.core.audit import AuditLedger
 from trading_agent_system.core.event_bus import MemoryEventBus
 from trading_agent_system.core.knowledge import RagIndexer
 from trading_agent_system.core.observability import MetricsRecorder, TraceLogger
+from trading_agent_system.core.reference import ThemeRegistry
 from trading_agent_system.schemas import (
     PremarketCatalyst,
     PremarketNewsItem,
@@ -94,6 +95,7 @@ class PremarketAgent:
         self.theme_detector = ThemeDetector()
         self.risk_filter = RiskFilter()
         self.scenario_builder = ScenarioBuilder()
+        self.theme_registry = ThemeRegistry.default()
 
     def run(self, report_date: date, limit_per_source: int = 30) -> PremarketReport:
         run_id = make_id("pmrun")
@@ -604,7 +606,18 @@ class PremarketAgent:
 
     def _enrich(self, item: PremarketNewsItem) -> PremarketNewsItem:
         text = f"{item.title} {item.summary}"
-        sectors = sorted(set(item.sectors) | {sector for sector, words in SECTOR_KEYWORDS.items() if any(word in text for word in words)})
+        registry_themes = {
+            theme
+            for keyword, theme in self.theme_registry.aliases.items()
+            if keyword in text and self.theme_registry.resolve_theme(theme)
+        }
+        direct_registry_themes = {theme for theme in self.theme_registry.theme_symbols if theme in text}
+        sectors = sorted(
+            set(item.sectors)
+            | {sector for sector, words in SECTOR_KEYWORDS.items() if any(word in text for word in words)}
+            | registry_themes
+            | direct_registry_themes
+        )
         symbols = sorted(set(item.symbols) | {symbol for name, symbol in SYMBOL_KEYWORDS.items() if name in text})
         category = item.category
         if any(word in text for word in OFFICIAL_WORDS):

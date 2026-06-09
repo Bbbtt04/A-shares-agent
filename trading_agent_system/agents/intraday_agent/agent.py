@@ -45,8 +45,8 @@ class IntradayAgent:
         self.bars.setdefault(bar.symbol, []).append(bar)
         self.delays_ms[bar.symbol] = delay_ms
 
-    def ingest_intel(self, brief: IntelBrief) -> None:
-        self.intel.append(brief)
+    def ingest_intel(self, brief: IntelBrief | dict[str, object]) -> None:
+        self.intel.append(brief if isinstance(brief, IntelBrief) else IntelBrief.model_validate(brief))
 
     def ingest_positions(self, positions: PositionSnapshot) -> None:
         self.positions = positions
@@ -67,7 +67,14 @@ class IntradayAgent:
             symbol_bars = self.bars.get(symbol, [])
             if not symbol_bars:
                 continue
-            snapshot = self.feature_builder.build(symbol, symbol_bars, self.intel, market_state)
+            snapshot = self.feature_builder.build(
+                symbol,
+                symbol_bars,
+                self.intel,
+                market_state,
+                premarket_context=self.premarket_context,
+                peer_bars=self.bars,
+            )
             candidates = self.signal_engine.evaluate(
                 symbol=symbol,
                 snapshot=snapshot,
