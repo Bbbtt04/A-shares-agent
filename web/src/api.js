@@ -39,6 +39,10 @@ export function fetchPremarketLatest() {
   return request('/api/premarket/latest');
 }
 
+export function fetchPremarketContext() {
+  return request('/api/premarket/context');
+}
+
 export async function fetchReport(name) {
   const response = await fetch(`/api/reports/${encodeURIComponent(name)}`);
   if (!response.ok) {
@@ -82,6 +86,17 @@ export function fetchObservabilityMetrics() {
   return request('/api/observability/metrics?limit=80');
 }
 
+export function fetchRiskApprovalQueue() {
+  return request('/api/risk/approval-queue?limit=50');
+}
+
+export function fetchDecisionTraces({ intentId = '', runId = '' } = {}) {
+  const params = new URLSearchParams({ limit: '80' });
+  if (intentId) params.set('intent_id', intentId);
+  if (runId) params.set('run_id', runId);
+  return request(`/api/decisions/traces?${params.toString()}`);
+}
+
 export function searchKnowledge({ q, tradingDay, themes = [] }) {
   const params = new URLSearchParams({
     q,
@@ -92,4 +107,20 @@ export function searchKnowledge({ q, tradingDay, themes = [] }) {
     if (theme) params.append('theme', theme);
   }
   return request(`/api/observability/knowledge/search?${params.toString()}`);
+}
+
+export function fetchRagDebug({ q, tradingDay, themes = [], symbols = [], sourceRankMin = '' }) {
+  const params = new URLSearchParams({
+    q,
+    top_k: '8',
+  });
+  if (tradingDay) params.set('trading_day', tradingDay);
+  if (sourceRankMin) params.set('source_rank_min', sourceRankMin);
+  for (const theme of themes) {
+    if (theme) params.append('theme', theme);
+  }
+  for (const symbol of symbols) {
+    if (symbol) params.append('symbol', symbol);
+  }
+  return request(`/api/rag/debug?${params.toString()}`);
 }

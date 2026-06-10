@@ -27,15 +27,18 @@ import {
   fetchObservabilityEvents,
   fetchObservabilityMetrics,
   fetchObservabilityTraces,
+  fetchDecisionTraces,
   fetchHealth,
   fetchMarketQuotes,
+  fetchPremarketContext,
   fetchPremarketLatest,
+  fetchRagDebug,
   fetchReport,
   fetchReports,
+  fetchRiskApprovalQueue,
   fetchStockPage,
   runAll,
   runJob,
-  searchKnowledge,
 } from './api.js';
 import './styles.css';
 
@@ -89,10 +92,15 @@ function App() {
     traces: [],
     metrics: [],
     knowledgeResults: [],
+    premarketContext: null,
+    approvalQueue: [],
+    decisionTimeline: [],
+    ragDebug: null,
   });
   const [observabilityLoading, setObservabilityLoading] = useState(false);
   const [observabilityError, setObservabilityError] = useState('');
   const [knowledgeQuery, setKnowledgeQuery] = useState('机器人');
+  const [decisionQuery, setDecisionQuery] = useState('');
   const startedAtRef = useRef({});
 
   const refreshMarket = useCallback(async () => {
@@ -153,24 +161,39 @@ function App() {
     setObservabilityLoading(true);
     setObservabilityError('');
     try {
-      const [eventsData, tracesData, metricsData, knowledgeData] = await Promise.all([
+      const [
+        eventsData,
+        tracesData,
+        metricsData,
+        contextData,
+        approvalData,
+        decisionData,
+        ragDebugData,
+      ] = await Promise.all([
         fetchObservabilityEvents(),
         fetchObservabilityTraces(),
         fetchObservabilityMetrics(),
-        searchKnowledge({ q: knowledgeQuery || '盘前', tradingDay: date, themes: [] }),
+        fetchPremarketContext(),
+        fetchRiskApprovalQueue(),
+        fetchDecisionTraces({ intentId: decisionQuery.trim() }),
+        fetchRagDebug({ q: knowledgeQuery || '盘前', tradingDay: date }),
       ]);
       setObservability({
         events: eventsData.events || [],
         traces: tracesData.traces || [],
         metrics: metricsData.metrics || [],
-        knowledgeResults: knowledgeData.results || [],
+        knowledgeResults: ragDebugData.results || [],
+        premarketContext: contextData.context || null,
+        approvalQueue: approvalData.queue || [],
+        decisionTimeline: decisionData.timeline || [],
+        ragDebug: ragDebugData,
       });
     } catch (error) {
       setObservabilityError(error.message);
     } finally {
       setObservabilityLoading(false);
     }
-  }, [date, knowledgeQuery]);
+  }, [date, decisionQuery, knowledgeQuery]);
 
   useEffect(() => {
     fetchHealth().then(setHealth).catch((error) => {
@@ -400,6 +423,14 @@ function App() {
         error={observabilityError}
         query={knowledgeQuery}
         onQueryChange={setKnowledgeQuery}
+        onRefresh={refreshObservability}
+      />
+
+      <DecisionOpsPanel
+        data={observability}
+        loading={observabilityLoading}
+        decisionQuery={decisionQuery}
+        onDecisionQueryChange={setDecisionQuery}
         onRefresh={refreshObservability}
       />
 
@@ -669,6 +700,98 @@ function ObservabilityPanel({ data, loading, error, query, onQueryChange, onRefr
               <li key={item.record.record_id}>
                 <strong>{item.record.title}</strong>
                 <span>{item.record.source || item.record.source_rank} · score {Number(item.score).toFixed(2)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DecisionOpsPanel({ data, loading, decisionQuery, onDecisionQueryChange, onRefresh }) {
+  const context = data.premarketContext;
+  const constraints = context?.constraints || [];
+  const approvals = data.approvalQueue || [];
+  const timeline = data.decisionTimeline || [];
+  const ragDebug = data.ragDebug;
+  return (
+    <section className="decision-panel">
+      <div className="decision-header">
+        <div className="section-title">
+          <ShieldCheck size={18} />
+          <span>决策与约束</span>
+        </div>
+        <div className="decision-actions">
+          <label className="decision-search">
+            <Search size={16} />
+            <input
+              value={decisionQuery}
+              onChange={(event) => onDecisionQueryChange(event.target.value)}
+              placeholder="按 intent_id 过滤 timeline"
+            />
+          </label>
+          <button className="icon-button refresh-button" type="button" onClick={onRefresh} disabled={loading} aria-label="刷新决策数据">
+            <RefreshCw className={loading ? 'spin' : ''} size={16} />
+          </button>
+        </div>
+      </div>
+      <div className="decision-grid">
+        <div className="decision-card">
+          <h2>Premarket Context</h2>
+          {context ? (
+            <>
+              <div className="context-strip">
+                <span>{viewLabel(context.market_view)}</span>
+                <span>确认 {context.confirmed_themes?.length || 0}</span>
+                <span>失败 {context.failed_themes?.length || 0}</span>
+              </div>
+              <ul className="trace-list">
+                {constraints.length === 0 ? <li>暂无盘前约束</li> : constraints.slice(0, 5).map((item) => (
+                  <li key={`${item.instruction_type}-${item.target}-${item.reason}`}>
+                    <strong>{item.instruction_type} · {item.target}</strong>
+                    <span>{item.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <div className="panel-empty">暂无盘前上下文</div>
+          )}
+        </div>
+        <div className="decision-card">
+          <h2>Approval Queue</h2>
+          <ul className="trace-list">
+            {approvals.length === 0 ? <li>暂无人工审批项</li> : approvals.slice(0, 6).map((item) => (
+              <li key={item.event_id || item.decision?.decision_id}>
+                <strong>{item.intent?.symbol || '-'} · {item.decision?.decision || '-'}</strong>
+                <span>{item.decision?.reason || item.premarket?.matched_instruction_types?.join(', ') || '-'}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="decision-card">
+          <h2>Decision Timeline</h2>
+          <ul className="trace-list">
+            {timeline.length === 0 ? <li>暂无决策事件</li> : timeline.slice(0, 6).map((item) => (
+              <li key={item.event_id}>
+                <strong>{item.topic}</strong>
+                <span>{item.intent_id || '-'} · {item.producer} · {formatDateTime(item.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="decision-card">
+          <h2>RAG Debug</h2>
+          <div className="context-strip">
+            <span>{ragDebug?.result_count || 0} 条</span>
+            <span>{ragDebug?.query?.q || '-'}</span>
+          </div>
+          <ul className="trace-list">
+            {(ragDebug?.results || []).length === 0 ? <li>暂无证据</li> : ragDebug.results.slice(0, 5).map((item) => (
+              <li key={item.record.record_id}>
+                <strong>{item.record.title}</strong>
+                <span>{item.record.source_rank} · {item.record.themes?.join(', ') || '-'}</span>
               </li>
             ))}
           </ul>
