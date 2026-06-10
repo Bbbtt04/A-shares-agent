@@ -69,6 +69,31 @@ h1 {
   gap: 12px;
 }
 
+.view-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 4px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.view-switch button {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: transparent;
+  color: #555555;
+  font-weight: 700;
+}
+
+.view-switch button.active {
+  background: #111111;
+  color: #FFFFFF;
+}
+
 .date-field {
   display: flex;
   align-items: center;
@@ -621,6 +646,293 @@ h1 {
   margin-top: 12px;
   color: #555555;
   font-size: 12px;
+}
+
+.architecture-page {
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.architecture-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 16px;
+  align-items: stretch;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #F0F0F0;
+}
+
+.architecture-kicker {
+  margin: 0 0 4px;
+  color: #888888;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.architecture-hero h2 {
+  margin: 0 0 8px;
+  color: #111111;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.architecture-hero p {
+  max-width: 920px;
+  margin: 0;
+  color: #555555;
+}
+
+.architecture-score {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 104px;
+  padding: 16px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FAFAFA;
+}
+
+.architecture-score span,
+.architecture-score small {
+  color: #888888;
+}
+
+.architecture-score strong {
+  color: #111111;
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.architecture-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.architecture-summary {
+  min-height: 132px;
+  padding: 16px;
+  border: 1px solid #F0F0F0;
+  border-top: 4px solid #888888;
+  border-radius: 8px;
+  background: #FAFAFA;
+}
+
+.architecture-summary h3,
+.architecture-summary strong,
+.architecture-summary p {
+  margin: 0;
+}
+
+.architecture-summary h3 {
+  color: #111111;
+  font-size: 16px;
+}
+
+.architecture-summary strong {
+  display: block;
+  margin-top: 8px;
+  color: #555555;
+}
+
+.architecture-summary p {
+  margin-top: 8px;
+  color: #888888;
+  font-size: 12px;
+}
+
+.architecture-blue { border-top-color: #0A77F5; }
+.architecture-purple { border-top-color: #7A35D8; }
+.architecture-cyan { border-top-color: #00B8B8; }
+.architecture-red { border-top-color: #FF2D19; }
+
+.architecture-flow {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.architecture-flow span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #555555;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.architecture-layer {
+  margin-top: 22px;
+}
+
+.architecture-layer-title {
+  display: grid;
+  grid-template-columns: 5px auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.architecture-layer-title span {
+  width: 5px;
+  height: 30px;
+  border-radius: 4px;
+  background: #888888;
+}
+
+.architecture-layer-title h3 {
+  margin: 0;
+  color: #111111;
+  font-size: 20px;
+}
+
+.architecture-layer-title p {
+  margin: 0;
+  overflow: hidden;
+  color: #888888;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.architecture-title-blue span { background: #0A77F5; }
+.architecture-title-purple span { background: #7A35D8; }
+.architecture-title-cyan span { background: #00B8B8; }
+.architecture-title-red span { background: #FF2D19; }
+
+.architecture-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.architecture-card {
+  min-width: 0;
+  min-height: 350px;
+  padding: 16px;
+  border: 1px solid #F0F0F0;
+  border-top: 4px solid #888888;
+  border-radius: 8px;
+  background: #FAFAFA;
+}
+
+.architecture-card-blue { border-top-color: #0A77F5; }
+.architecture-card-purple { border-top-color: #7A35D8; }
+.architecture-card-cyan { border-top-color: #00B8B8; }
+.architecture-card-red { border-top-color: #FF2D19; }
+
+.architecture-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.architecture-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid #DDEBFF;
+  border-radius: 8px;
+  background: #F5FAFF;
+  color: #0A77F5;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.architecture-status {
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.architecture-status.done {
+  color: #008500;
+  background: #E1FAE8;
+}
+
+.architecture-status.partial {
+  color: #7A3100;
+  background: #FFFAD8;
+}
+
+.architecture-status.missing {
+  color: #FF2D19;
+  background: #FFF1F0;
+}
+
+.architecture-card h4 {
+  margin: 0 0 6px;
+  color: #111111;
+  font-size: 17px;
+}
+
+.architecture-subtitle {
+  min-height: 44px;
+  margin: 0 0 12px;
+  color: #555555;
+  font-weight: 700;
+}
+
+.architecture-details {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.architecture-details div {
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.architecture-details dt {
+  margin-bottom: 4px;
+  color: #888888;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.architecture-details dd {
+  margin: 0;
+  color: #555555;
+  font-size: 12px;
+}
+
+.architecture-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.architecture-tags span {
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid #E5E5E5;
+  border-radius: 4px;
+  background: #FFFFFF;
+  color: #555555;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .pager-button {
@@ -1281,6 +1593,15 @@ kbd {
     grid-template-columns: 1fr;
   }
 
+  .architecture-summary-grid,
+  .architecture-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .architecture-flow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .quote-list,
   .quote-list.compact {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1343,6 +1664,22 @@ kbd {
     flex-direction: column;
   }
 
+  .architecture-hero,
+  .architecture-summary-grid,
+  .architecture-card-grid,
+  .architecture-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .architecture-layer-title {
+    grid-template-columns: 5px minmax(0, 1fr);
+  }
+
+  .architecture-layer-title p {
+    grid-column: 2;
+    white-space: normal;
+  }
+
   .premarket-summary,
   .premarket-layout {
     grid-template-columns: 1fr;
@@ -1355,8 +1692,13 @@ kbd {
 
   .stock-search,
   .knowledge-search,
-  .decision-search {
+  .decision-search,
+  .view-switch {
     width: 100%;
+  }
+
+  .view-switch button {
+    flex: 1;
   }
 
   .stock-actions select,

@@ -41,6 +41,7 @@ import {
   runAll,
   runJob,
 } from './api.js';
+import AgentArchitecturePage from './AgentArchitecturePage.jsx';
 import './styles.css';
 
 const JOBS = [
@@ -63,6 +64,7 @@ function formatMs(ms) {
 
 function App() {
   const [health, setHealth] = useState(null);
+  const [activePage, setActivePage] = useState('console');
   const [date, setDate] = useState(todayIso());
   const [results, setResults] = useState({});
   const [selectedJob, setSelectedJob] = useState('intraday');
@@ -386,10 +388,26 @@ function App() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Paper Trading</p>
-          <h1>A股 Agent 控制台</h1>
+          <p className="eyebrow">{activePage === 'console' ? 'Paper Trading' : 'Architecture Map'}</p>
+          <h1>{activePage === 'console' ? 'A股 Agent 控制台' : '当前 Agent 分层功能说明'}</h1>
         </div>
         <div className="top-actions">
+          <div className="view-switch" aria-label="页面切换">
+            <button
+              className={activePage === 'console' ? 'active' : ''}
+              type="button"
+              onClick={() => setActivePage('console')}
+            >
+              控制台
+            </button>
+            <button
+              className={activePage === 'architecture' ? 'active' : ''}
+              type="button"
+              onClick={() => setActivePage('architecture')}
+            >
+              架构说明
+            </button>
+          </div>
           <label className="date-field">
             <span>交易日</span>
             <input value={date} onChange={(event) => setDate(event.target.value)} type="date" />
@@ -398,143 +416,149 @@ function App() {
         </div>
       </header>
 
-      <section className="status-grid">
-        <Metric icon={Gauge} label="模式" value="paper" tone="blue" />
-        <Metric icon={ShieldCheck} label="实盘交易" value="关闭" tone="green" />
-        <Metric icon={AlertTriangle} label="人工确认" value="开启" tone="orange" />
-        <Metric icon={Clock} label="最近耗时" value={formatMs(activeResult?.elapsed_ms || timers[selectedJob] || 0)} tone="gray" />
-      </section>
+      {activePage === 'architecture' ? (
+        <AgentArchitecturePage />
+      ) : (
+        <>
+          <section className="status-grid">
+            <Metric icon={Gauge} label="模式" value="paper" tone="blue" />
+            <Metric icon={ShieldCheck} label="实盘交易" value="关闭" tone="green" />
+            <Metric icon={AlertTriangle} label="人工确认" value="开启" tone="orange" />
+            <Metric icon={Clock} label="最近耗时" value={formatMs(activeResult?.elapsed_ms || timers[selectedJob] || 0)} tone="gray" />
+          </section>
 
-      <PremarketPanel
-        report={premarket}
-        loading={premarketLoading || Boolean(running.premarket)}
-        error={premarketError}
-        onRefresh={refreshPremarket}
-        onRun={() => executeJob('premarket')}
-      />
+          <PremarketPanel
+            report={premarket}
+            loading={premarketLoading || Boolean(running.premarket)}
+            error={premarketError}
+            onRefresh={refreshPremarket}
+            onRun={() => executeJob('premarket')}
+          />
 
-      <MarketPanel
-        market={market}
-        loading={marketLoading}
-        error={marketError}
-        autoRefresh={autoRefresh}
-        lastRefresh={lastMarketRefresh}
-        onRefresh={refreshMarket}
-        onToggleAuto={() => setAutoRefresh((value) => !value)}
-      />
+          <MarketPanel
+            market={market}
+            loading={marketLoading}
+            error={marketError}
+            autoRefresh={autoRefresh}
+            lastRefresh={lastMarketRefresh}
+            onRefresh={refreshMarket}
+            onToggleAuto={() => setAutoRefresh((value) => !value)}
+          />
 
-      <StockTapePanel
-        data={stocks}
-        loading={stocksLoading}
-        error={stocksError}
-        page={stockPage}
-        pageSize={stockPageSize}
-        sort={stockSort}
-        asc={stockAsc}
-        filter={stockFilter}
-        lastRefresh={lastStockRefresh}
-        onRefresh={refreshStocks}
-        onPageChange={setStockPage}
-        onPageSizeChange={(value) => {
-          setStockPageSize(value);
-          setStockPage(1);
-        }}
-        onSortChange={(value) => {
-          setStockSort(value);
-          setStockPage(1);
-        }}
-        onAscChange={setStockAsc}
-        onFilterChange={setStockFilter}
-      />
+          <StockTapePanel
+            data={stocks}
+            loading={stocksLoading}
+            error={stocksError}
+            page={stockPage}
+            pageSize={stockPageSize}
+            sort={stockSort}
+            asc={stockAsc}
+            filter={stockFilter}
+            lastRefresh={lastStockRefresh}
+            onRefresh={refreshStocks}
+            onPageChange={setStockPage}
+            onPageSizeChange={(value) => {
+              setStockPageSize(value);
+              setStockPage(1);
+            }}
+            onSortChange={(value) => {
+              setStockSort(value);
+              setStockPage(1);
+            }}
+            onAscChange={setStockAsc}
+            onFilterChange={setStockFilter}
+          />
 
-      <IntradayAnalysisPanel
-        data={intraday}
-        loading={intradayLoading || Boolean(running.intraday)}
-        error={intradayError}
-        onRefresh={refreshIntraday}
-        onRun={() => executeJob('intraday')}
-      />
+          <IntradayAnalysisPanel
+            data={intraday}
+            loading={intradayLoading || Boolean(running.intraday)}
+            error={intradayError}
+            onRefresh={refreshIntraday}
+            onRun={() => executeJob('intraday')}
+          />
 
-      <ObservabilityPanel
-        data={observability}
-        loading={observabilityLoading}
-        error={observabilityError}
-        query={knowledgeQuery}
-        onQueryChange={setKnowledgeQuery}
-        onRefresh={refreshObservability}
-      />
+          <ObservabilityPanel
+            data={observability}
+            loading={observabilityLoading}
+            error={observabilityError}
+            query={knowledgeQuery}
+            onQueryChange={setKnowledgeQuery}
+            onRefresh={refreshObservability}
+          />
 
-      <DecisionOpsPanel
-        data={observability}
-        loading={observabilityLoading}
-        decisionQuery={decisionQuery}
-        onDecisionQueryChange={setDecisionQuery}
-        onRefresh={refreshObservability}
-      />
+          <DecisionOpsPanel
+            data={observability}
+            loading={observabilityLoading}
+            decisionQuery={decisionQuery}
+            onDecisionQueryChange={setDecisionQuery}
+            onRefresh={refreshObservability}
+          />
 
-      <section className="workspace">
-        <div className="control-panel">
-          <div className="section-title">
-            <BarChart3 size={18} />
-            <span>运行</span>
-          </div>
-          <button className="run-all" type="button" onClick={executeAll} disabled={running.all}>
-            {running.all ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}
-            <span>运行完整链路</span>
-            <kbd>Ctrl Enter</kbd>
-          </button>
-          <div className="job-list">
-            {JOBS.map((job) => (
-              <JobButton
-                key={job.id}
-                job={job}
-                selected={selectedJob === job.id}
-                running={Boolean(running[job.id])}
-                elapsed={running[job.id] ? timers[job.id] : results[job.id]?.elapsed_ms}
-                status={results[job.id]?.status}
-                onSelect={() => setSelectedJob(job.id)}
-                onRun={() => executeJob(job.id)}
-              />
+          <section className="workspace">
+            <div className="control-panel">
+              <div className="section-title">
+                <BarChart3 size={18} />
+                <span>运行</span>
+              </div>
+              <button className="run-all" type="button" onClick={executeAll} disabled={running.all}>
+                {running.all ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}
+                <span>运行完整链路</span>
+                <kbd>Ctrl Enter</kbd>
+              </button>
+              <div className="job-list">
+                {JOBS.map((job) => (
+                  <JobButton
+                    key={job.id}
+                    job={job}
+                    selected={selectedJob === job.id}
+                    running={Boolean(running[job.id])}
+                    elapsed={running[job.id] ? timers[job.id] : results[job.id]?.elapsed_ms}
+                    status={results[job.id]?.status}
+                    onSelect={() => setSelectedJob(job.id)}
+                    onRun={() => executeJob(job.id)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="output-panel">
+              <div className="section-title">
+                <Terminal size={18} />
+                <span>输出</span>
+              </div>
+              <OutputView result={activeResult} running={Boolean(running[selectedJob])} elapsed={timers[selectedJob]} />
+            </div>
+
+            <div className="report-panel">
+              <div className="section-title">
+                <FileText size={18} />
+                <span>日报</span>
+              </div>
+              <div className="report-select-row">
+                <select value={selectedReport} onChange={(event) => setSelectedReport(event.target.value)}>
+                  <option value="">无报告</option>
+                  {reports.map((report) => (
+                    <option key={report.name} value={report.name}>{report.name}</option>
+                  ))}
+                </select>
+                <button className="icon-button" type="button" onClick={refreshReports} aria-label="刷新报告">
+                  <RefreshCw size={16} />
+                </button>
+              </div>
+              <pre className="report-preview">{reportText || '暂无报告'}</pre>
+            </div>
+          </section>
+
+          <section className="summary-strip">
+            {summary.map((item) => (
+              <div className="summary-item" key={item.label}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
             ))}
-          </div>
-        </div>
-
-        <div className="output-panel">
-          <div className="section-title">
-            <Terminal size={18} />
-            <span>输出</span>
-          </div>
-          <OutputView result={activeResult} running={Boolean(running[selectedJob])} elapsed={timers[selectedJob]} />
-        </div>
-
-        <div className="report-panel">
-          <div className="section-title">
-            <FileText size={18} />
-            <span>日报</span>
-          </div>
-          <div className="report-select-row">
-            <select value={selectedReport} onChange={(event) => setSelectedReport(event.target.value)}>
-              <option value="">无报告</option>
-              {reports.map((report) => (
-                <option key={report.name} value={report.name}>{report.name}</option>
-              ))}
-            </select>
-            <button className="icon-button" type="button" onClick={refreshReports} aria-label="刷新报告">
-              <RefreshCw size={16} />
-            </button>
-          </div>
-          <pre className="report-preview">{reportText || '暂无报告'}</pre>
-        </div>
-      </section>
-
-      <section className="summary-strip">
-        {summary.map((item) => (
-          <div className="summary-item" key={item.label}>
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
-          </div>
-        ))}
-      </section>
+          </section>
+        </>
+      )}
     </main>
   );
 }
