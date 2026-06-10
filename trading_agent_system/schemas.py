@@ -232,6 +232,55 @@ class TradeIntent(StrictBaseModel):
         return self
 
 
+class IntradaySignalAnalysis(StrictBaseModel):
+    signal_id: str
+    strategy_id: str
+    strategy_version: str
+    side: Literal["buy", "sell"]
+    confidence: float = Field(ge=0, le=1)
+    status: Literal["planned", "filtered"]
+    reasons: list[str] = Field(default_factory=list)
+    filter_reason: str | None = None
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class IntradaySymbolAnalysis(StrictBaseModel):
+    symbol: str
+    ts: datetime | None = None
+    last_price: float | None = None
+    score: float = Field(ge=0, le=1)
+    status: Literal["tradable", "watch", "blocked", "no_signal"]
+    reasons: list[str] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+    features: dict[str, Any] = Field(default_factory=dict)
+    premarket: dict[str, Any] = Field(default_factory=dict)
+    signals: list[IntradaySignalAnalysis] = Field(default_factory=list)
+    intent_ids: list[str] = Field(default_factory=list)
+
+
+class IntradayThemeAnalysis(StrictBaseModel):
+    theme_name: str
+    symbol_count: int = 0
+    avg_score: float = Field(ge=0, le=1)
+    avg_theme_strength: float = 0
+    confirmed: bool = False
+    symbols: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
+class IntradayAnalysisReport(StrictBaseModel):
+    report_id: str = Field(default_factory=lambda: make_id("intraday"))
+    generated_at: datetime = Field(default_factory=utc_now)
+    market_state: MarketState
+    symbol_count: int = 0
+    trade_intent_count: int = 0
+    symbols: list[IntradaySymbolAnalysis] = Field(default_factory=list)
+    themes: list[IntradayThemeAnalysis] = Field(default_factory=list)
+    generated_intents: list[TradeIntent] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    summary: str = ""
+
+
 class CheckResult(StrictBaseModel):
     check_name: str
     status: Literal["pass", "warn", "scale_down", "needs_human_approval", "hard_reject"]
@@ -433,6 +482,7 @@ class DailyReviewReport(StrictBaseModel):
 EVENT_MODEL_BY_TOPIC = {
     "intel.briefs": IntelBrief,
     "market.bars.1m": MarketBar,
+    "intraday.analysis": IntradayAnalysisReport,
     "trading.intents": TradeIntent,
     "risk.decisions": RiskDecision,
     "risk.approval_queue": dict,

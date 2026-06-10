@@ -17,21 +17,13 @@ class TradePlanner:
         intel: list[IntelBrief],
         premarket_context: PremarketContext | None = None,
     ) -> TradeIntent | None:
-        if candidate.confidence < self.min_confidence:
-            return None
-        if market_state.data_quality != "ok" and candidate.side == "buy":
-            return None
-        if market_state.risk_mode == "halt_new_entries" and candidate.side == "buy":
+        if self.filter_reason(candidate, snapshot, market_state, intel, premarket_context):
             return None
         premarket_metadata = {}
         if premarket_context is not None:
-            premarket_metadata = premarket_context.metadata_for(candidate.symbol)
-            if candidate.side == "buy" and premarket_metadata["blocks_new_entry"]:
-                return None
+            premarket_metadata = premarket_context.metadata_for(candidate.symbol, _snapshot_themes(snapshot))
         related = [brief for brief in intel if brief.event_id in candidate.evidence_ids]
         risk_flags = sorted({flag for brief in related for flag in brief.risk_flags})
-        if candidate.side == "buy" and any(flag in {"unverified", "rumor"} for flag in risk_flags):
-            return None
         quantity = candidate.suggested_quantity or self.default_quantity
         evidence_ids = _unique([*candidate.evidence_ids, *premarket_metadata.get("evidence_ids", [])])
         entry_reason = list(candidate.reasons)
@@ -68,6 +60,32 @@ class TradePlanner:
             },
         )
 
+    def filter_reason(
+        self,
+        candidate: SignalCandidate,
+        snapshot: FeatureSnapshot,
+        market_state: MarketState,
+        intel: list[IntelBrief],
+        premarket_context: PremarketContext | None = None,
+    ) -> str | None:
+        if candidate.confidence < self.min_confidence:
+            return "confidence_below_minimum"
+        if market_state.data_quality != "ok" and candidate.side == "buy":
+            return "market_data_not_ok"
+        if market_state.risk_mode == "halt_new_entries" and candidate.side == "buy":
+            return "market_halt_new_entries"
+        if premarket_context is not None:
+            premarket_metadata = premarket_context.metadata_for(candidate.symbol, _snapshot_themes(snapshot))
+            if candidate.side == "buy" and premarket_metadata["blocks_new_entry"]:
+                return "premarket_blocks_new_entry"
+        if candidate.side == "buy" and any(flag in {"unverified", "rumor"} for flag in self.risk_flags_for(candidate, intel)):
+            return "unverified_or_rumor_risk"
+        return None
+
+    def risk_flags_for(self, candidate: SignalCandidate, intel: list[IntelBrief]) -> list[str]:
+        related = [brief for brief in intel if brief.event_id in candidate.evidence_ids]
+        return sorted({flag for brief in related for flag in brief.risk_flags})
+
 
 def _unique(values: list[object]) -> list[str]:
     seen: set[str] = set()
@@ -81,3 +99,8 @@ def _unique(values: list[object]) -> list[str]:
         seen.add(item)
         result.append(item)
     return result
+
+
+def _snapshot_themes(snapshot: FeatureSnapshot) -> list[str]:
+    theme = snapshot.features.get("primary_theme")
+    return [str(theme)] if theme else []
