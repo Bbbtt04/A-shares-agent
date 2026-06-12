@@ -30,3 +30,14 @@ def test_premarket_debug_records_are_not_hard_limited_to_ten_items():
     source = MAIN.read_text(encoding="utf-8")
 
     assert "currentStep.items.slice(0, 10)" not in source
+
+
+def test_source_fetch_records_can_expand_to_crawled_items():
+    source = MAIN.read_text(encoding="utf-8")
+
+    assert "expandedSourceKeys" in source
+    assert "crawledItemsBySource" in source
+    assert "debugSourceKey" in source
+    assert "provider_name" in source
+    assert "debug-source-toggle" in source
+    assert "debug-source-items" in source

@@ -100,6 +100,7 @@ class IntelBrief(StrictBaseModel):
 class PremarketNewsItem(StrictBaseModel):
     item_id: str = Field(default_factory=lambda: make_id("news"))
     source: str
+    provider_name: str | None = None
     source_tier: Literal["official", "professional", "sentiment", "unknown"] = "unknown"
     title: str
     summary: str = ""
@@ -115,6 +116,7 @@ class PremarketNewsItem(StrictBaseModel):
 
 class PremarketSourceStatus(StrictBaseModel):
     source: str
+    provider_name: str | None = None
     status: Literal["ok", "empty", "failed"]
     fetched_count: int = 0
     used_count: int = 0

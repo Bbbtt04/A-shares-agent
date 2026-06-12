@@ -4,6 +4,7 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
@@ -655,6 +656,29 @@ function PremarketDebugPage({
   const knowledgeResults = data?.knowledge?.query_results || [];
   const ragPacks = data?.rag?.evidence?.payload?.packs || [];
   const evaluationSummary = data?.rag?.evaluation?.payload?.summary || {};
+  const [expandedSourceKeys, setExpandedSourceKeys] = useState({});
+  const isSourceFetchStep = currentStep?.id === 'source_fetch';
+  const crawledItemsBySource = useMemo(() => {
+    const crawledStep = steps.find((step) => step.id === 'crawled_documents');
+    return (crawledStep?.items || []).reduce((groups, item) => {
+      const source = debugSourceKey(item);
+      if (!groups[source]) groups[source] = [];
+      groups[source].push(item);
+      return groups;
+    }, {});
+  }, [steps]);
+
+  useEffect(() => {
+    setExpandedSourceKeys({});
+  }, [data?.trading_day]);
+
+  const toggleSource = useCallback((sourceKey) => {
+    setExpandedSourceKeys((current) => ({
+      ...current,
+      [sourceKey]: !current[sourceKey],
+    }));
+  }, []);
+
   return (
     <section className="premarket-debug-page">
       <div className="premarket-debug-toolbar">
@@ -705,7 +729,46 @@ function PremarketDebugPage({
           <ul className="debug-record-list">
             {(currentStep?.items || []).length === 0 ? (
               <li>暂无记录</li>
-            ) : currentStep.items.map((item, index) => (
+            ) : isSourceFetchStep ? currentStep.items.map((item, index) => {
+              const sourceKey = debugSourceKey(item) || `source-${index}`;
+              const itemsForSource = crawledItemsBySource[sourceKey] || [];
+              const expanded = Boolean(expandedSourceKeys[sourceKey]);
+              return (
+                <li className={`debug-source-record ${expanded ? 'expanded' : ''}`} key={`${currentStep.id}-${sourceKey}`}>
+                  <button
+                    className="debug-source-toggle"
+                    type="button"
+                    aria-expanded={expanded}
+                    onClick={() => toggleSource(sourceKey)}
+                  >
+                    <span className="debug-source-main">
+                      <strong>{debugItemTitle(item)}</strong>
+                      <span>{debugItemSummary(item)}</span>
+                      <code>{debugItemMeta(item)}</code>
+                    </span>
+                    <span className="debug-source-count">{itemsForSource.length} 条明细</span>
+                    <ChevronDown className="debug-source-chevron" size={16} />
+                  </button>
+                  {expanded ? (
+                    <div className="debug-source-detail" role="region" aria-label={`${sourceKey} 爬取明细`}>
+                      {itemsForSource.length === 0 ? (
+                        <p className="debug-source-empty">暂无爬取明细</p>
+                      ) : (
+                        <ul className="debug-source-items">
+                          {itemsForSource.map((crawledItem, crawledIndex) => (
+                            <li key={`${sourceKey}-${crawledItem.url || crawledItem.title || crawledIndex}`}>
+                              <strong>{debugItemTitle(crawledItem)}</strong>
+                              <span>{debugItemSummary(crawledItem)}</span>
+                              <code>{debugItemMeta(crawledItem)}</code>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            }) : currentStep.items.map((item, index) => (
               <li key={`${currentStep.id}-${index}`}>
                 <strong>{debugItemTitle(item)}</strong>
                 <span>{debugItemSummary(item)}</span>
@@ -1612,6 +1675,11 @@ function debugItemTitle(item) {
   return JSON.stringify(item).slice(0, 80);
 }
 
+function debugSourceKey(item) {
+  if (!item || typeof item !== 'object') return '未知来源';
+  return item.provider_name || item.source || item.source_name || item.record?.source || '未知来源';
+}
+
 function debugItemSummary(item) {
   if (!item || typeof item !== 'object') return '';
   if ('fetched_count' in item || 'used_count' in item) {
@@ -1632,6 +1700,7 @@ function debugItemMeta(item) {
   if (!item || typeof item !== 'object') return '-';
   if ('in_premarket_window' in item) {
     const values = [
+      item.provider_name && item.provider_name !== item.source ? item.provider_name : null,
       item.source,
       item.category,
       item.in_premarket_window ? '入窗' : '未入窗',

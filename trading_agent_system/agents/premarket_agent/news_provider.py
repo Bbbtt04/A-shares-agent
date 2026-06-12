@@ -31,6 +31,7 @@ class NewsProviderResult:
     def source_status(self, used_count: int) -> PremarketSourceStatus:
         return PremarketSourceStatus(
             source=self.source,
+            provider_name=self.source,
             status=self.status,
             fetched_count=len(self.items),
             used_count=used_count,

@@ -163,7 +163,9 @@ class PremarketAgent:
         statuses: list[PremarketSourceStatus] = []
         for provider in self.providers:
             result = provider.fetch(limit=limit_per_source)
-            crawled.extend(result.items)
+            provider_items = [item.model_copy(update={"provider_name": result.source}) for item in result.items]
+            result.items = provider_items
+            crawled.extend(provider_items)
             self._metric(
                 "data_source_fetch_total",
                 1,
@@ -179,7 +181,7 @@ class PremarketAgent:
                     "error": result.error,
                 },
             )
-            filtered = self._filter_window(result.items, window)
+            filtered = self._filter_window(provider_items, window)
             enriched = [self._enrich(item) for item in filtered]
             collected.extend(enriched)
             statuses.append(result.source_status(used_count=len(enriched)))

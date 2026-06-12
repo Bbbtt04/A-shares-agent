@@ -1800,7 +1800,7 @@ kbd {
   list-style: none;
 }
 
-.debug-record-list li {
+.debug-record-list > li {
   display: grid;
   gap: 4px;
   min-height: 56px;
@@ -1810,26 +1810,140 @@ kbd {
   background: #FFFFFF;
 }
 
-.debug-record-list strong,
-.debug-record-list span,
-.debug-record-list code {
+.debug-record-list > li > strong,
+.debug-record-list > li > span,
+.debug-record-list > li > code,
+.debug-source-main strong,
+.debug-source-main span,
+.debug-source-main code,
+.debug-source-items strong,
+.debug-source-items span,
+.debug-source-items code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.debug-record-list strong {
+.debug-record-list > li > strong,
+.debug-source-main strong,
+.debug-source-items strong {
   color: #111111;
 }
 
-.debug-record-list span,
-.debug-record-list code {
+.debug-record-list > li > span,
+.debug-record-list > li > code,
+.debug-source-main span,
+.debug-source-main code,
+.debug-source-items span,
+.debug-source-items code {
   color: #888888;
   font-size: 12px;
 }
 
 .debug-record-list code {
   font-family: inherit;
+}
+
+.debug-record-list > li.debug-source-record {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.debug-source-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.debug-source-toggle:hover {
+  background: #FAFAFA;
+}
+
+.debug-source-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.debug-source-count {
+  color: #555555;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.debug-source-chevron {
+  color: #888888;
+  transition: transform 0.16s ease;
+}
+
+.debug-source-record.expanded .debug-source-chevron {
+  transform: rotate(180deg);
+}
+
+.debug-source-detail {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid #F0F0F0;
+  background: #FAFAFA;
+}
+
+.debug-source-empty {
+  margin: 0;
+  color: #888888;
+  font-size: 12px;
+}
+
+.debug-source-items {
+  display: grid;
+  gap: 8px;
+  max-height: 420px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.debug-source-items li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid #F0F0F0;
+  border-radius: 6px;
+  background: #FFFFFF;
+}
+
+.debug-source-items strong,
+.debug-source-items span,
+.debug-source-items code {
+  display: block;
+  line-height: 1.45;
+}
+
+.debug-source-items strong {
+  font-size: 13px;
+}
+
+.debug-source-items span {
+  display: -webkit-box;
+  overflow: hidden;
+  text-overflow: initial;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .debug-side {

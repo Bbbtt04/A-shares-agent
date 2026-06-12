@@ -91,7 +91,9 @@ def test_premarket_agent_builds_spec_outputs(tmp_path):
         "机器人公司收到监管函",
         "过期盘前消息",
     }
+    assert {item["provider_name"] for item in crawled_documents[0]["items"]} == {"local"}
     assert any(item["title"] == "过期盘前消息" and not item["in_premarket_window"] for item in crawled_documents[0]["items"])
+    assert report.source_status[0].provider_name == "local"
     assert "premarket.raw_documents" in bus.all_events()
     assert len(bus.events("premarket.raw_documents")[0]["value"]) == 2
     assert "premarket.normalized_events" in bus.all_events()
