@@ -6,6 +6,8 @@ from hashlib import sha256
 from time import perf_counter
 from zoneinfo import ZoneInfo
 
+from premarket_contracts import FetchWindowContract
+
 from trading_agent_system.core.audit import AuditLedger
 from trading_agent_system.core.event_bus import MemoryEventBus
 from trading_agent_system.core.knowledge import RagIndexer
@@ -20,7 +22,7 @@ from trading_agent_system.schemas import (
     make_id,
 )
 
-from .news_provider import FetchWindow, NewsProviderResult
+from .news_provider import NewsProviderResult
 from .builders import RiskFilter, ScenarioBuilder, ThemeDetector
 from .pipeline import EventClusterer, EventScorer
 from .rag.evaluation import RAGEvaluator
@@ -166,7 +168,7 @@ class PremarketAgent:
         for provider in self.providers:
             result = self._fetch_provider(provider, limit_per_source, fetch_window)
             provider_items = [
-                item.model_copy(update={"provider_name": result.source})
+                item.model_copy(update={"provider_name": item.provider_name or result.source})
                 for item in fetch_window.filter_items(result.items)
             ]
             result.items = provider_items
@@ -189,7 +191,11 @@ class PremarketAgent:
             filtered = provider_items
             enriched = [self._enrich(item) for item in filtered]
             collected.extend(enriched)
-            statuses.append(result.source_status(used_count=len(enriched)))
+            provider_source_status = getattr(provider, "last_source_status", None)
+            if provider_source_status:
+                statuses.extend(provider_source_status)
+            else:
+                statuses.append(result.source_status(used_count=len(enriched)))
             self.audit.write(
                 "premarket_provider_filtered",
                 {"source": result.source, "used_count": len(enriched), "window": window.model_dump(mode="json")},
@@ -422,7 +428,7 @@ class PremarketAgent:
             return
         self.metrics.record(name, value, tags=tags, run_id=run_id)
 
-    def _fetch_provider(self, provider: object, limit: int, fetch_window: FetchWindow) -> NewsProviderResult:
+    def _fetch_provider(self, provider: object, limit: int, fetch_window: FetchWindowContract) -> NewsProviderResult:
         try:
             return provider.fetch(limit=limit, window=fetch_window)
         except TypeError as error:
@@ -430,7 +436,11 @@ class PremarketAgent:
                 raise
             return provider.fetch(limit=limit)
 
-    def _to_crawled_documents(self, items: list[PremarketNewsItem], window: FetchWindow) -> list[dict[str, object]]:
+    def _to_crawled_documents(
+        self,
+        items: list[PremarketNewsItem],
+        window: FetchWindowContract,
+    ) -> list[dict[str, object]]:
         documents: list[dict[str, object]] = []
         for item in items:
             payload = item.model_dump(mode="json")

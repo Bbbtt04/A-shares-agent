@@ -4,8 +4,22 @@ import argparse
 import json
 from datetime import date
 from pathlib import Path
+import sys
 
+
+ROOT = Path(__file__).resolve().parents[1]
+for package_path in (
+    ROOT / "packages" / "premarket-contracts",
+    ROOT / "packages" / "premarket-crawler-mcp",
+):
+    package_path_str = str(package_path)
+    if package_path.exists() and package_path_str not in sys.path:
+        sys.path.insert(0, package_path_str)
+
+from premarket_crawler_mcp.registry import build_rss_provider_factory, default_provider_factories
+from premarket_crawler_mcp.service import PremarketCrawlerService
 from trading_agent_system.agents.premarket_agent import PremarketAgent
+from trading_agent_system.agents.premarket_agent.crawler_adapter import LocalPremarketCrawlerProvider
 from trading_agent_system.agents.premarket_agent.news_provider import (
     CailianpressTelegraphProvider,
     CsrcNewsProvider,
@@ -25,6 +39,19 @@ from trading_agent_system.core.knowledge import KnowledgeStore, RagIndexer
 from trading_agent_system.core.observability import MetricsRecorder, TraceLogger
 from trading_agent_system.core.storage import JsonlEventRepository
 from trading_agent_system.agents.premarket_agent.trading_calendar import TradingCalendarService
+
+
+DEFAULT_PREMARKET_SOURCES = [
+    "csrc",
+    "eastmoney",
+    "sina_finance",
+    "sina_stock",
+    "sina_global",
+    "tonghuashun",
+    "cailianpress",
+    "kaipanla",
+    "xueqiu",
+]
 
 
 def main() -> None:
@@ -61,6 +88,40 @@ def main() -> None:
 
 def build_providers(app_config: dict[str, object]) -> list[object]:
     premarket = app_config.get("premarket", {})
+    crawler = premarket.get("crawler", {}) if isinstance(premarket, dict) else {}
+    mode = str(crawler.get("mode", "local")) if isinstance(crawler, dict) else "local"
+    if mode != "legacy":
+        return [build_crawler_provider(premarket if isinstance(premarket, dict) else {})]
+    return build_legacy_providers(premarket if isinstance(premarket, dict) else {})
+
+
+def build_crawler_provider(premarket_config: dict[str, object]) -> LocalPremarketCrawlerProvider:
+    provider_names = premarket_config.get("providers", [])
+    sources = [str(name) for name in provider_names] if isinstance(provider_names, list) else []
+    if not sources:
+        sources = list(DEFAULT_PREMARKET_SOURCES)
+
+    factories = default_provider_factories()
+    feeds = premarket_config.get("news_feeds", [])
+    if isinstance(feeds, list):
+        for index, feed in enumerate(feeds, start=1):
+            if not isinstance(feed, dict) or not feed.get("url") or not feed.get("source"):
+                continue
+            name = f"rss_{index}_{str(feed['source']).lower().replace(' ', '_')}"
+            factories[name] = build_rss_provider_factory(
+                source=str(feed["source"]),
+                url=str(feed["url"]),
+                tier=str(feed.get("tier", "professional")),
+            )
+            sources.append(name)
+
+    return LocalPremarketCrawlerProvider(
+        service=PremarketCrawlerService(provider_factories=factories),
+        sources=sources,
+    )
+
+
+def build_legacy_providers(premarket: dict[str, object]) -> list[object]:
     provider_names = premarket.get("providers", []) if isinstance(premarket, dict) else []
     providers: list[object] = []
     for name in provider_names if isinstance(provider_names, list) else []:
