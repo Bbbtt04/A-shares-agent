@@ -2,6 +2,15 @@
 
 本文档基于当前代码状态整理，目标是明确已经实现的能力、缺失待实现部分、需要调整的边界，以及后续可以独立推进的模块拆分。
 
+## M0-M3 基建层执行状态（2026-06-14）
+
+- 执行计划：`docs/superpowers/plans/2026-06-14-infrastructure-layer.md`。
+- M0 公共契约与事件层：已新增 `core/contracts`，复用现有 `core/events` / `core/event_bus`。
+- M1 数据源与数据治理层：已新增 `DataSourceRegistry`、`EntityResolver`、`DataQualityScorer`、`DataLineageRecord`。
+- M2 LLM Gateway：已新增统一 `LLMGateway`、Prompt 模板、结构化输出校验、request cache、token/cost/失败审计。
+- M3 Tool Registry 与沙盒：已新增 `ToolRegistry`、`ToolExecutor`、`PermissionProfile`、工具 rate limit、调用预算与工具调用审计。
+- 本轮暂不进入：新闻 Agent、公告 Agent、盘前策略 Agent、盘中异动 Agent、状态仓库、编排层、API/Web 重构。
+
 ## 1. 当前代码已实现能力
 
 ### 1.1 盘前链路
