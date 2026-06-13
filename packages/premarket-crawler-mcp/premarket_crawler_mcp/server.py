@@ -70,3 +70,7 @@ def _parse_window(value: dict[str, Any]) -> FetchWindowContract:
         if isinstance(payload.get(key), str):
             payload[key] = datetime.fromisoformat(payload[key])
     return FetchWindowContract.model_validate(payload)
+
+
+if __name__ == "__main__":
+    main()

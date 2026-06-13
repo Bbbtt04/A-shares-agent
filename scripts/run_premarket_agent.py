@@ -19,7 +19,11 @@ for package_path in (
 from premarket_crawler_mcp.registry import build_rss_provider_factory, default_provider_factories
 from premarket_crawler_mcp.service import PremarketCrawlerService
 from trading_agent_system.agents.premarket_agent import PremarketAgent
-from trading_agent_system.agents.premarket_agent.crawler_adapter import LocalPremarketCrawlerProvider
+from trading_agent_system.agents.premarket_agent.crawler_adapter import (
+    LocalPremarketCrawlerProvider,
+    McpPremarketCrawlerProvider,
+    StdioMcpToolClient,
+)
 from trading_agent_system.agents.premarket_agent.news_provider import (
     CailianpressTelegraphProvider,
     CsrcNewsProvider,
@@ -90,12 +94,14 @@ def build_providers(app_config: dict[str, object]) -> list[object]:
     premarket = app_config.get("premarket", {})
     crawler = premarket.get("crawler", {}) if isinstance(premarket, dict) else {}
     mode = str(crawler.get("mode", "local")) if isinstance(crawler, dict) else "local"
+    if mode == "mcp":
+        return [build_mcp_crawler_provider(premarket if isinstance(premarket, dict) else {}, crawler)]
     if mode != "legacy":
-        return [build_crawler_provider(premarket if isinstance(premarket, dict) else {})]
+        return [build_local_crawler_provider(premarket if isinstance(premarket, dict) else {})]
     return build_legacy_providers(premarket if isinstance(premarket, dict) else {})
 
 
-def build_crawler_provider(premarket_config: dict[str, object]) -> LocalPremarketCrawlerProvider:
+def build_local_crawler_provider(premarket_config: dict[str, object]) -> LocalPremarketCrawlerProvider:
     provider_names = premarket_config.get("providers", [])
     sources = [str(name) for name in provider_names] if isinstance(provider_names, list) else []
     if not sources:
@@ -119,6 +125,30 @@ def build_crawler_provider(premarket_config: dict[str, object]) -> LocalPremarke
         service=PremarketCrawlerService(provider_factories=factories),
         sources=sources,
     )
+
+
+def build_mcp_crawler_provider(
+    premarket_config: dict[str, object],
+    crawler_config: dict[str, object],
+) -> McpPremarketCrawlerProvider:
+    provider_names = premarket_config.get("providers", [])
+    sources = [str(name) for name in provider_names] if isinstance(provider_names, list) else []
+    if not sources:
+        sources = list(DEFAULT_PREMARKET_SOURCES)
+    args = crawler_config.get("args", ["-m", "premarket_crawler_mcp.server"])
+    command = str(crawler_config.get("command", sys.executable))
+    if command == "python":
+        command = sys.executable
+    client = StdioMcpToolClient(
+        command=command,
+        args=[str(item) for item in args] if isinstance(args, list) else ["-m", "premarket_crawler_mcp.server"],
+        timeout_seconds=int(crawler_config.get("timeout_seconds", 30)),
+        cwd=str(ROOT),
+    )
+    fallback_provider = None
+    if bool(crawler_config.get("fallback_to_local", True)):
+        fallback_provider = build_local_crawler_provider(premarket_config)
+    return McpPremarketCrawlerProvider(client=client, sources=sources, fallback_provider=fallback_provider)
 
 
 def build_legacy_providers(premarket: dict[str, object]) -> list[object]:

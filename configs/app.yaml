@@ -16,7 +16,7 @@ market:
 premarket:
   news_window: "previous_close_to_auction"
   crawler:
-    mode: local
+    mode: mcp
     transport: stdio
     command: python
     args:

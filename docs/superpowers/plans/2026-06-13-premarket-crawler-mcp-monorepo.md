@@ -327,3 +327,61 @@ Expected: no output and exit 0.
 git add pyproject.toml configs/app.yaml README.md packages tests scripts trading_agent_system
 git commit -m "【AI】feat: add premarket crawler mcp monorepo packages"
 ```
+
+### Task 6: Stdio MCP Host Client
+
+**Files:**
+- Modify: `trading_agent_system/agents/premarket_agent/crawler_adapter.py`
+- Modify: `scripts/run_premarket_agent.py`
+- Modify: `configs/app.yaml`
+- Test: `tests/premarket_mcp/test_host_adapter.py`
+
+- [ ] **Step 1: Write the failing MCP provider test**
+
+```python
+class FakeMcpToolClient:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        return self.response
+
+
+def test_mcp_crawler_provider_calls_fetch_tool_and_maps_response():
+    response = CrawlerResponseContract(
+        status="ok",
+        window=window,
+        items=[PremarketNewsItemContract(source="同花顺7x24", provider_name="tonghuashun", title="MCP新闻")],
+        source_status=[],
+    ).model_dump(mode="json")
+    client = FakeMcpToolClient(response)
+    provider = McpPremarketCrawlerProvider(client=client, sources=["tonghuashun"])
+
+    result = provider.fetch(limit=80, window=window)
+
+    assert client.calls[0][0] == "fetch_premarket_news"
+    assert client.calls[0][1]["sources"] == ["tonghuashun"]
+    assert result.items[0].title == "MCP新闻"
+```
+
+- [ ] **Step 2: Run the test and verify RED**
+
+Run: `.venv/bin/python -m pytest tests/premarket_mcp/test_host_adapter.py::test_mcp_crawler_provider_calls_fetch_tool_and_maps_response -q`
+
+Expected: FAIL because `McpPremarketCrawlerProvider` does not exist.
+
+- [ ] **Step 3: Implement MCP provider and stdio client**
+
+Add `McpPremarketCrawlerProvider` and `StdioMcpToolClient`. `StdioMcpToolClient` uses `mcp.client.stdio.stdio_client`, `StdioServerParameters`, and `ClientSession.call_tool()`.
+
+- [ ] **Step 4: Run the host adapter test and a real stdio smoke test**
+
+Run: `.venv/bin/python -m pytest tests/premarket_mcp/test_host_adapter.py -q`
+
+Expected: PASS.
+
+Run a Python smoke script that instantiates `StdioMcpToolClient(command=".venv/bin/python", args=["-m", "premarket_crawler_mcp.server"])` and calls `health`.
+
+Expected: `{"status": "ok", "service": "premarket-crawler-mcp", ...}`.
