@@ -1,0 +1,291 @@
+{
+  "generated_at": "2026-06-13",
+  "branch": "codex/dev-knowledge-graph",
+  "project": "A-shares-agent",
+  "nodes": [
+    {
+      "id": "external_information",
+      "label": "External information sources",
+      "type": "source",
+      "paths": [
+        "trading_agent_system/agents/premarket_agent/news_provider.py"
+      ]
+    },
+    {
+      "id": "market_data",
+      "label": "Market data providers",
+      "type": "source",
+      "paths": [
+        "trading_agent_system/core/market_data/eastmoney.py",
+        "trading_agent_system/core/market_data/sina.py",
+        "trading_agent_system/core/market_data/tencent.py"
+      ]
+    },
+    {
+      "id": "premarket_agent",
+      "label": "PremarketAgent",
+      "type": "agent",
+      "paths": [
+        "trading_agent_system/agents/premarket_agent/agent.py"
+      ]
+    },
+    {
+      "id": "premarket_rag",
+      "label": "Premarket RAG",
+      "type": "capability",
+      "paths": [
+        "trading_agent_system/agents/premarket_agent/rag"
+      ]
+    },
+    {
+      "id": "knowledge_store",
+      "label": "KnowledgeStore",
+      "type": "capability",
+      "paths": [
+        "trading_agent_system/core/knowledge"
+      ]
+    },
+    {
+      "id": "premarket_context",
+      "label": "PremarketContext",
+      "type": "data_model",
+      "paths": [
+        "trading_agent_system/core/premarket/context.py"
+      ]
+    },
+    {
+      "id": "intraday_agent",
+      "label": "IntradayAgent",
+      "type": "agent",
+      "paths": [
+        "trading_agent_system/agents/intraday_agent"
+      ]
+    },
+    {
+      "id": "risk_gateway",
+      "label": "RiskGateway",
+      "type": "service",
+      "paths": [
+        "trading_agent_system/core/risk_gateway"
+      ]
+    },
+    {
+      "id": "paper_broker",
+      "label": "PaperBroker",
+      "type": "service",
+      "paths": [
+        "trading_agent_system/core/broker/paper_broker.py"
+      ]
+    },
+    {
+      "id": "review_agent",
+      "label": "ReviewAgent",
+      "type": "agent",
+      "paths": [
+        "trading_agent_system/agents/review_agent"
+      ]
+    },
+    {
+      "id": "event_store",
+      "label": "Event bus and JSONL event store",
+      "type": "infrastructure",
+      "paths": [
+        "trading_agent_system/core/event_bus",
+        "trading_agent_system/core/storage/repositories.py"
+      ]
+    },
+    {
+      "id": "observability",
+      "label": "Traces, metrics, and audit ledger",
+      "type": "infrastructure",
+      "paths": [
+        "trading_agent_system/core/observability",
+        "trading_agent_system/core/audit/ledger.py"
+      ]
+    },
+    {
+      "id": "api",
+      "label": "FastAPI Console API",
+      "type": "api",
+      "paths": [
+        "trading_agent_system/api/app.py"
+      ]
+    },
+    {
+      "id": "web_console",
+      "label": "React Web Console",
+      "type": "frontend",
+      "paths": [
+        "web/src"
+      ]
+    },
+    {
+      "id": "schemas",
+      "label": "Shared schemas",
+      "type": "data_model",
+      "paths": [
+        "trading_agent_system/schemas.py",
+        "trading_agent_system/agents/premarket_agent/schemas.py",
+        "trading_agent_system/agents/premarket_agent/rag/schemas.py"
+      ]
+    },
+    {
+      "id": "configuration",
+      "label": "Runtime configuration",
+      "type": "configuration",
+      "paths": [
+        "configs/app.yaml",
+        "configs/risk.paper.yaml",
+        "configs/premarket.yaml",
+        "configs/rag.premarket.yaml",
+        "configs/strategy_registry.yaml",
+        "configs/symbols.watchlist.yaml"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "external_information",
+      "to": "premarket_agent",
+      "relation": "feeds"
+    },
+    {
+      "from": "premarket_agent",
+      "to": "premarket_rag",
+      "relation": "uses"
+    },
+    {
+      "from": "premarket_rag",
+      "to": "knowledge_store",
+      "relation": "indexes_and_retrieves"
+    },
+    {
+      "from": "premarket_agent",
+      "to": "premarket_context",
+      "relation": "produces"
+    },
+    {
+      "from": "premarket_context",
+      "to": "intraday_agent",
+      "relation": "constrains"
+    },
+    {
+      "from": "market_data",
+      "to": "intraday_agent",
+      "relation": "feeds"
+    },
+    {
+      "from": "intraday_agent",
+      "to": "risk_gateway",
+      "relation": "emits_trade_intents_to"
+    },
+    {
+      "from": "risk_gateway",
+      "to": "paper_broker",
+      "relation": "emits_approved_order_instructions_to"
+    },
+    {
+      "from": "paper_broker",
+      "to": "review_agent",
+      "relation": "provides_fills_and_snapshots_to"
+    },
+    {
+      "from": "premarket_agent",
+      "to": "event_store",
+      "relation": "publishes_events"
+    },
+    {
+      "from": "intraday_agent",
+      "to": "event_store",
+      "relation": "publishes_events"
+    },
+    {
+      "from": "risk_gateway",
+      "to": "event_store",
+      "relation": "publishes_events"
+    },
+    {
+      "from": "paper_broker",
+      "to": "event_store",
+      "relation": "publishes_events"
+    },
+    {
+      "from": "review_agent",
+      "to": "event_store",
+      "relation": "publishes_reports_and_events"
+    },
+    {
+      "from": "event_store",
+      "to": "api",
+      "relation": "queried_by"
+    },
+    {
+      "from": "observability",
+      "to": "api",
+      "relation": "queried_by"
+    },
+    {
+      "from": "knowledge_store",
+      "to": "api",
+      "relation": "queried_by"
+    },
+    {
+      "from": "api",
+      "to": "web_console",
+      "relation": "serves"
+    },
+    {
+      "from": "schemas",
+      "to": "premarket_agent",
+      "relation": "typed_by"
+    },
+    {
+      "from": "schemas",
+      "to": "intraday_agent",
+      "relation": "typed_by"
+    },
+    {
+      "from": "schemas",
+      "to": "risk_gateway",
+      "relation": "typed_by"
+    },
+    {
+      "from": "schemas",
+      "to": "paper_broker",
+      "relation": "typed_by"
+    },
+    {
+      "from": "schemas",
+      "to": "review_agent",
+      "relation": "typed_by"
+    },
+    {
+      "from": "configuration",
+      "to": "premarket_agent",
+      "relation": "configures"
+    },
+    {
+      "from": "configuration",
+      "to": "risk_gateway",
+      "relation": "configures"
+    },
+    {
+      "from": "configuration",
+      "to": "paper_broker",
+      "relation": "configures"
+    },
+    {
+      "from": "configuration",
+      "to": "api",
+      "relation": "configures"
+    }
+  ],
+  "safety_invariants": [
+    "Paper trading only by default",
+    "trading_enabled defaults to false",
+    "Human approval is required by default",
+    "RiskGateway is deterministic and not a business agent",
+    "PaperBroker is a simulator and not a real broker adapter",
+    "IntradayAgent emits intents, not direct order instructions"
+  ]
+}

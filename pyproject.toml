@@ -10,6 +10,7 @@ dependencies = [
     "pytest>=8,<9",
     "PyYAML>=6.0,<7",
     "qdrant-client>=1.9,<2",
+    "tzdata>=2026.2",
     "uvicorn[standard]>=0.30,<1",
 ]
 
