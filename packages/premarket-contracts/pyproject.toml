@@ -1,0 +1,11 @@
+[project]
+name = "agu-premarket-contracts"
+version = "0.1.0"
+description = "Shared contracts for the AGU premarket crawler MCP boundary."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7,<3",
+]
+
+[tool.setuptools.packages.find]
+include = ["premarket_contracts*"]

@@ -5,6 +5,7 @@ description = "Paper-trading A-share trading agent MVP with intraday, risk, brok
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.111,<1",
+    "mcp>=1.27,<2",
     "numpy>=1.26,<3",
     "pydantic>=2.7,<3",
     "pytest>=8,<9",
@@ -19,9 +20,12 @@ agu-risk-gateway = "scripts.run_risk_gateway:main"
 agu-paper-broker = "scripts.run_paper_broker:main"
 agu-review = "scripts.run_review_agent:main"
 agu-api = "scripts.run_api:main"
+agu-premarket-crawler-mcp = "premarket_crawler_mcp.server:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = [".", "packages/premarket-contracts", "packages/premarket-crawler-mcp"]
 
 [tool.setuptools.packages.find]
-include = ["trading_agent_system*", "scripts"]
+where = [".", "packages/premarket-contracts", "packages/premarket-crawler-mcp"]
+include = ["trading_agent_system*", "scripts", "premarket_contracts*", "premarket_crawler_mcp*"]

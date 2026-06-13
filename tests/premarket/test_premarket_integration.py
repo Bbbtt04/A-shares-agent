@@ -8,7 +8,7 @@ from trading_agent_system.core.event_bus import DurableEventBus
 from trading_agent_system.core.knowledge import KnowledgeStore, RagIndexer, RagRetriever
 from trading_agent_system.core.observability import MetricsRecorder, TraceLogger
 from trading_agent_system.core.storage import JsonlEventRepository
-from trading_agent_system.schemas import PremarketNewsItem
+from trading_agent_system.schemas import PremarketNewsItem, PremarketSourceStatus
 
 
 class LocalProvider:
@@ -94,6 +94,66 @@ class WindowAwareProvider:
             ],
             "ok",
         )
+
+
+class MultiSourceStatusProvider:
+    source = "premarket-crawler-mcp"
+
+    def __init__(self) -> None:
+        self.last_source_status = [
+            PremarketSourceStatus(
+                source="同花顺7x24",
+                provider_name="tonghuashun",
+                status="ok",
+                fetched_count=1,
+                used_count=1,
+            ),
+            PremarketSourceStatus(
+                source="雪球热议",
+                provider_name="xueqiu",
+                status="failed",
+                fetched_count=0,
+                used_count=0,
+                error="blocked",
+            ),
+        ]
+
+    def fetch(self, limit: int = 30, window: FetchWindow | None = None) -> NewsProviderResult:
+        return NewsProviderResult(
+            self.source,
+            [
+                PremarketNewsItem(
+                    source="同花顺7x24",
+                    provider_name="tonghuashun",
+                    source_tier="professional",
+                    title="多源状态新闻",
+                    summary="应保留 crawler adapter 暴露的逐源状态。",
+                    published_at=datetime(2026, 6, 8, 16, 0, tzinfo=timezone.utc),
+                    category="ths_7x24",
+                    credibility=0.7,
+                )
+            ],
+            "ok",
+        )
+
+
+def test_premarket_agent_preserves_crawler_source_statuses(tmp_path):
+    bus = DurableEventBus(repository=JsonlEventRepository(tmp_path / "events"))
+    agent = PremarketAgent(
+        event_bus=bus,
+        audit=AuditLedger(tmp_path / "audit.jsonl"),
+        providers=[MultiSourceStatusProvider()],
+        calendar=TradingCalendarService(),
+    )
+
+    report = agent.run(date(2026, 6, 9), limit_per_source=10)
+
+    assert [(status.provider_name, status.status) for status in report.source_status] == [
+        ("tonghuashun", "ok"),
+        ("xueqiu", "failed"),
+    ]
+    crawled_documents = bus.events("premarket.crawled_documents")[0]["items"]
+    assert crawled_documents[0]["provider_name"] == "tonghuashun"
 
 
 def test_premarket_agent_fetches_only_after_close_and_before_open(tmp_path):

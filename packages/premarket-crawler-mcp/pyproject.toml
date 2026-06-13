@@ -1,0 +1,16 @@
+[project]
+name = "agu-premarket-crawler-mcp"
+version = "0.1.0"
+description = "Premarket crawler MCP service for AGU agent."
+requires-python = ">=3.11"
+dependencies = [
+    "agu-premarket-contracts==0.1.0",
+    "mcp>=1.27,<2",
+    "pydantic>=2.7,<3",
+]
+
+[project.scripts]
+agu-premarket-crawler-mcp = "premarket_crawler_mcp.server:main"
+
+[tool.setuptools.packages.find]
+include = ["premarket_crawler_mcp*"]

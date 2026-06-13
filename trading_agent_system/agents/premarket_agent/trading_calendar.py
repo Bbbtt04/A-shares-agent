@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 from zoneinfo import ZoneInfo
 
-from .schemas import PreMarketWindow
+from premarket_contracts import FetchWindowContract
 
-if TYPE_CHECKING:
-    from .news_provider import FetchWindow
+from .schemas import PreMarketWindow
 
 
 DEFAULT_SESSION = {
@@ -89,12 +88,14 @@ class TradingCalendarService:
     def build_premarket_window(self, trading_day: date) -> PreMarketWindow:
         return self.build_window(trading_day)
 
-    def build_fetch_window(self, trading_day: date, mode: Literal["premarket", "post_close"] = "premarket") -> FetchWindow:
-        from .news_provider import FetchWindow
-
+    def build_fetch_window(
+        self,
+        trading_day: date,
+        mode: Literal["premarket", "post_close"] = "premarket",
+    ) -> FetchWindowContract:
         if mode == "premarket":
             window = self.build_window(trading_day)
-            return FetchWindow(
+            return FetchWindowContract(
                 mode=mode,
                 trading_day=window.trading_day,
                 previous_trading_day=window.previous_trading_day,
@@ -105,7 +106,7 @@ class TradingCalendarService:
 
         next_day = self.next_trading_day(trading_day)
         next_window = self.build_window(next_day)
-        return FetchWindow(
+        return FetchWindowContract(
             mode=mode,
             trading_day=next_day,
             previous_trading_day=trading_day,

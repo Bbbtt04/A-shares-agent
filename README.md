@@ -52,6 +52,25 @@ python scripts/run_review_agent.py --date 2026-06-09 --config configs/app.yaml -
 
 Reports are written to `reports/daily/`.
 
+## Monorepo Packages
+
+The repository is moving toward a monorepo layout. The first extracted capability is the premarket crawler boundary:
+
+```text
+packages/
+  premarket-contracts/      # shared Pydantic contracts for crawler and host
+  premarket-crawler-mcp/    # crawler registry, service, providers, and MCP tools
+```
+
+`trading_agent_system` still owns the trading agents, RAG, knowledge store, reports, risk, and audit flow. The crawler package owns source fetching and standardization, while the host consumes it through `LocalPremarketCrawlerProvider`.
+
+The crawler MCP package exposes tool-shaped functions:
+
+- `health`
+- `list_sources`
+- `fetch_source_news`
+- `fetch_premarket_news`
+
 ## Web Console
 
 Start the local API:

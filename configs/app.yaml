@@ -15,6 +15,14 @@ market:
 
 premarket:
   news_window: "previous_close_to_auction"
+  crawler:
+    mode: mcp
+    transport: stdio
+    command: python
+    args:
+      - -m
+      - premarket_crawler_mcp.server
+    fallback_to_local: true
   limit_per_source: 80
   providers:
     - csrc
