@@ -184,3 +184,91 @@ def test_premarket_debug_api_separates_source_fetch_from_window_filtered_documen
     assert raw_documents["count"] == 0
     assert raw_documents["items"] == []
     assert "盘前窗口内没有可用消息" in response["warnings"][0]
+
+
+def test_premarket_debug_api_returns_a_stock_data_summary(tmp_path, monkeypatch):
+    monkeypatch.setattr(api_module, "EVENT_DIR", tmp_path / "events")
+    monkeypatch.setattr(api_module, "KNOWLEDGE_PATH", tmp_path / "knowledge.sqlite")
+    monkeypatch.setattr(api_module, "PREMARKET_REPORT_DIR", tmp_path / "reports" / "premarket")
+    config_path = tmp_path / "app.yaml"
+    monkeypatch.setattr(api_module, "APP_CONFIG", config_path)
+    api_module.PREMARKET_REPORT_DIR.mkdir(parents=True)
+    config_path.write_text(
+        """
+premarket:
+  a_stock_data:
+    enabled: true
+    symbols:
+      - 688981.SH
+      - 002371.SZ
+""".strip(),
+        encoding="utf-8",
+    )
+
+    repository = JsonlEventRepository(api_module.EVENT_DIR)
+    trading_day = date(2026, 6, 13)
+    repository.append_envelope(
+        make_envelope(
+            "premarket.crawled_documents",
+            {
+                "items": [
+                    {
+                        "source": "a-stock-data/premarket",
+                        "provider_name": "a-stock-data/premarket",
+                        "title": "中芯国际 同花顺强势股",
+                        "category": "theme_hotspot",
+                        "in_premarket_window": True,
+                    },
+                    {
+                        "source": "a-stock-data/premarket",
+                        "provider_name": "a-stock-data/premarket",
+                        "title": "中芯国际 盘前观察候选",
+                        "category": "quote_candidate",
+                        "in_premarket_window": True,
+                    },
+                    {
+                        "source": "同花顺7x24",
+                        "title": "其它来源",
+                        "category": "ths_7x24",
+                        "in_premarket_window": True,
+                    },
+                ]
+            },
+            producer="premarket_agent",
+            trading_day=trading_day,
+            run_id="run_a_stock_data",
+        )
+    )
+    (api_module.PREMARKET_REPORT_DIR / "2026-06-13.json").write_text(
+        json.dumps(
+            {
+                "date": "2026-06-13",
+                "market_view": "neutral",
+                "summary": "盘前关注半导体。",
+                "source_status": [
+                    {
+                        "source": "a-stock-data/premarket",
+                        "provider_name": "a-stock-data/premarket",
+                        "status": "ok",
+                        "fetched_count": 4,
+                        "used_count": 2,
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    response = api_module.premarket_debug(trading_day=trading_day, q="半导体")
+
+    assert response["a_stock_data"] == {
+        "enabled": True,
+        "symbols": ["688981.SH", "002371.SZ"],
+        "status": "ok",
+        "fetched_count": 4,
+        "used_count": 2,
+        "crawled_count": 2,
+        "in_window_count": 2,
+        "category_counts": {"theme_hotspot": 1, "quote_candidate": 1},
+    }

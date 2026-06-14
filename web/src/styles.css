@@ -1987,6 +1987,30 @@ kbd {
   color: #555555;
 }
 
+.debug-a-stock-data-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.debug-a-stock-data-grid span {
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FAFAFA;
+  color: #555555;
+  font-size: 12px;
+}
+
+.debug-a-stock-data-grid strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #111111;
+  font-size: 18px;
+}
+
 @media (max-width: 1180px) {
   .pipeline-flow {
     grid-template-columns: 1fr;

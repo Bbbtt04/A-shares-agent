@@ -58,6 +58,12 @@ const DEBUG_STEP_LABELS = {
   crawled_documents: '全部爬取数据',
   raw_documents: '窗口内原始文档',
 };
+const A_STOCK_DATA_CATEGORY_LABELS = {
+  theme_hotspot: '同花顺热点',
+  stock_news: '个股新闻',
+  announcement: '公告',
+  quote_candidate: '盘前观察候选',
+};
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -656,6 +662,7 @@ function PremarketDebugPage({
   const knowledgeResults = data?.knowledge?.query_results || [];
   const ragPacks = data?.rag?.evidence?.payload?.packs || [];
   const evaluationSummary = data?.rag?.evaluation?.payload?.summary || {};
+  const aStockData = data?.a_stock_data || {};
   const [expandedSourceKeys, setExpandedSourceKeys] = useState({});
   const isSourceFetchStep = currentStep?.id === 'source_fetch';
   const crawledItemsBySource = useMemo(() => {
@@ -794,6 +801,23 @@ function PremarketDebugPage({
               <span>禁入 {conclusion.avoid_list?.length || 0}</span>
             </div>
             <p>{conclusion.summary || '暂无盘前报告'}</p>
+          </article>
+          <article className="debug-side-card debug-a-stock-data-card">
+            <h2>a-stock-data 数据包</h2>
+            <div className="context-strip">
+              <span>{aStockData.enabled ? '已启用' : '未启用'}</span>
+              <span>{aStockData.status || '-'}</span>
+              <span>{aStockData.in_window_count || 0}/{aStockData.crawled_count || 0} 入窗</span>
+            </div>
+            <div className="debug-a-stock-data-grid">
+              {Object.entries(A_STOCK_DATA_CATEGORY_LABELS).map(([category, label]) => (
+                <span key={category}>
+                  <strong>{aStockData.category_counts?.[category] || 0}</strong>
+                  {label}
+                </span>
+              ))}
+            </div>
+            <p>{(aStockData.symbols || []).length > 0 ? `配置标的：${aStockData.symbols.join('、')}` : '未配置盘前标的'}</p>
           </article>
           <article className="debug-side-card">
             <h2>落入知识库</h2>
@@ -1006,7 +1030,7 @@ function PremarketPanel({ report, loading, error, onRefresh, onRun }) {
             <div className="premarket-column">
               <h2>观察清单</h2>
               <ul className="premarket-list">
-                {watchlist.length === 0 ? <li>暂无</li> : watchlist.slice(0, 5).map((item) => (
+                {watchlist.length === 0 ? <li>暂无</li> : watchlist.map((item) => (
                   <li key={item.symbol}>
                     <strong>{item.symbol}</strong>
                     <span>{item.reason}</span>

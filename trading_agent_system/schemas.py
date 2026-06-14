@@ -139,11 +139,18 @@ class PremarketCatalyst(StrictBaseModel):
 class PremarketTradePlan(StrictBaseModel):
     symbol: str
     name: str | None = None
+    theme: str | None = None
     action: Literal["watch", "avoid", "block"]
     reason: str
     triggers: list[str] = Field(default_factory=list)
     risk_flags: list[str] = Field(default_factory=list)
     confidence: float = Field(ge=0, le=1)
+    reference_price: float | None = None
+    entry_low: float | None = None
+    entry_high: float | None = None
+    target_price: float | None = None
+    stop_loss: float | None = None
+    data_source: str | None = None
 
 
 class PremarketReport(StrictBaseModel):

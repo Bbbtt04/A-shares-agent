@@ -167,3 +167,47 @@ def test_premarket_agent_builds_spec_outputs(tmp_path):
     assert trace_logger.load(agent="premarket_agent")
     assert metrics.load(name="agent_run_total")
     assert RagRetriever(knowledge_store).search(query="半导体", trading_day=date(2026, 6, 9), themes=["半导体"])
+
+
+class ManyOriginalSiteProvider:
+    source = "many-origin-sites"
+
+    def __init__(self) -> None:
+        self.seen_limit: int | None = None
+
+    def fetch(self, limit: int | None = 30, window: FetchWindow | None = None) -> NewsProviderResult:
+        self.seen_limit = limit
+        items = [
+            PremarketNewsItem(
+                source=f"origin-site-{index % 3}",
+                source_tier="professional",
+                title=f"original site item {index:03d}",
+                summary="source crawl item",
+                published_at=datetime(2026, 6, 8, 16, 0, tzinfo=timezone.utc),
+                category="professional_wire",
+                credibility=0.8,
+            )
+            for index in range(95)
+        ]
+        return NewsProviderResult(self.source, items, "ok")
+
+
+def test_premarket_agent_keeps_all_unlimited_original_site_items(tmp_path):
+    provider = ManyOriginalSiteProvider()
+    bus = DurableEventBus(repository=JsonlEventRepository(tmp_path / "events"))
+    agent = PremarketAgent(
+        event_bus=bus,
+        audit=AuditLedger(tmp_path / "audit.jsonl"),
+        providers=[provider],
+        calendar=TradingCalendarService(),
+    )
+
+    report = agent.run(date(2026, 6, 9), limit_per_source=None)
+
+    assert provider.seen_limit is None
+    assert len(report.news_items) == 95
+    assert report.source_status[0].fetched_count == 95
+    assert report.source_status[0].used_count == 95
+    crawled_documents = bus.events("premarket.crawled_documents")[0]
+    assert crawled_documents["total_count"] == 95
+    assert len(crawled_documents["items"]) == 95

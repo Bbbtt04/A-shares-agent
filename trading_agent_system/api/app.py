@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -33,6 +34,7 @@ EVENT_DIR = ROOT / "data" / "events"
 TRACE_DIR = ROOT / "data" / "traces"
 METRICS_DIR = ROOT / "data" / "metrics"
 KNOWLEDGE_PATH = ROOT / "data" / "knowledge.sqlite"
+A_STOCK_DATA_SOURCE = "a-stock-data/premarket"
 
 
 class RunRequest(BaseModel):
@@ -256,6 +258,7 @@ def premarket_debug(
             "evidence": _latest_event_payload(repository, "premarket.rag_evidence_packs", trading_day=resolved_day),
             "evaluation": _latest_event_payload(repository, "premarket.rag_evaluation", trading_day=resolved_day),
         },
+        "a_stock_data": _a_stock_data_debug_summary(report, crawled_documents_step["items"]),
         "conclusion": _premarket_conclusion(report),
         "warnings": warnings,
     }
@@ -486,6 +489,9 @@ def _run_job(job: str, report_date: Date) -> RunResult:
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         timeout=30,
         check=False,
     )
@@ -650,6 +656,61 @@ def _source_fetch_step(report: dict[str, object] | None, limit: int) -> dict[str
             "filtered_count": max(fetched_count - used_count, 0),
         },
     }
+
+
+def _a_stock_data_debug_summary(
+    report: dict[str, object] | None,
+    crawled_items: list[object],
+) -> dict[str, object]:
+    config = _a_stock_data_config()
+    source_status = _a_stock_data_source_status(report)
+    crawled = [
+        item
+        for item in crawled_items
+        if isinstance(item, dict)
+        and (item.get("provider_name") == A_STOCK_DATA_SOURCE or item.get("source") == A_STOCK_DATA_SOURCE)
+    ]
+    category_counts: dict[str, int] = {}
+    for item in crawled:
+        category = str(item.get("category") or "unknown")
+        category_counts[category] = category_counts.get(category, 0) + 1
+    return {
+        "enabled": bool(config.get("enabled", False)),
+        "symbols": config.get("symbols", []),
+        "status": source_status.get("status", "empty" if config.get("enabled", False) else "disabled"),
+        "fetched_count": int(source_status.get("fetched_count") or 0),
+        "used_count": int(source_status.get("used_count") or 0),
+        "crawled_count": len(crawled),
+        "in_window_count": sum(1 for item in crawled if item.get("in_premarket_window")),
+        "category_counts": category_counts,
+    }
+
+
+def _a_stock_data_config() -> dict[str, object]:
+    try:
+        config = load_yaml_config(APP_CONFIG)
+    except (FileNotFoundError, OSError):
+        return {"enabled": False, "symbols": []}
+    premarket = config.get("premarket", {}) if isinstance(config, dict) else {}
+    a_stock_data = premarket.get("a_stock_data", {}) if isinstance(premarket, dict) else {}
+    if not isinstance(a_stock_data, dict):
+        return {"enabled": False, "symbols": []}
+    symbols = [str(symbol) for symbol in a_stock_data.get("symbols", []) if symbol]
+    return {
+        "enabled": bool(a_stock_data.get("enabled", False)),
+        "symbols": symbols,
+    }
+
+
+def _a_stock_data_source_status(report: dict[str, object] | None) -> dict[str, object]:
+    if not report or not isinstance(report.get("source_status"), list):
+        return {}
+    for item in report["source_status"]:
+        if not isinstance(item, dict):
+            continue
+        if item.get("provider_name") == A_STOCK_DATA_SOURCE or item.get("source") == A_STOCK_DATA_SOURCE:
+            return item
+    return {}
 
 
 def _report_warnings(report: dict[str, object] | None) -> list[str]:

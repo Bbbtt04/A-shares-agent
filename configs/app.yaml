@@ -15,18 +15,17 @@ market:
 
 premarket:
   news_window: "previous_close_to_auction"
-  limit_per_source: 80
+  limit_per_source: null
   providers:
-    - csrc
-    - eastmoney
-    - sina_finance
-    - sina_stock
-    - sina_global
     - tonghuashun
-    - cailianpress
-    - kaipanla
-    - xueqiu
   news_feeds: []
+  a_stock_data:
+    enabled: true
+    symbols:
+      - 688981.SH
+      - 002371.SZ
+      - 688256.SH
+      - 601138.SH
 
 watchlist:
   - 510300.SH

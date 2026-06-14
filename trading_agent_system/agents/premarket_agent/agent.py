@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from trading_agent_system.core.audit import AuditLedger
 from trading_agent_system.core.event_bus import MemoryEventBus
 from trading_agent_system.core.knowledge import RagIndexer
+from trading_agent_system.core.market_data.a_stock_data import AStockCandidate, AStockDataAdapter
 from trading_agent_system.core.observability import MetricsRecorder, TraceLogger
 from trading_agent_system.core.reference import ThemeRegistry
 from trading_agent_system.schemas import (
@@ -51,6 +52,8 @@ POSITIVE_WORDS = {"支持", "利好", "增长", "增持", "回购", "突破", "�
 NEGATIVE_WORDS = {"处罚", "调查", "减持", "亏损", "下滑", "风险", "退市", "立案", "暴跌", "违约", "终止"}
 OFFICIAL_WORDS = {"证监会", "交易所", "上交所", "深交所", "北交所", "央行", "国务院", "发改委", "工信部"}
 RISK_WORDS = {"传闻", "网传", "未经证实", "小作文", "澄清", "监管函", "问询函"}
+A_STOCK_DATA_SOURCE = "a-stock-data/premarket"
+A_STOCK_DATA_CATEGORIES = {"theme_hotspot", "stock_news", "announcement", "quote_candidate"}
 
 SECTOR_KEYWORDS: dict[str, set[str]] = {
     "半导体": {"半导体", "芯片", "光刻", "晶圆", "存储"},
@@ -131,6 +134,7 @@ class PremarketAgent:
         metrics: MetricsRecorder | None = None,
         knowledge_indexer: RagIndexer | None = None,
         premarket_rag_service: PreMarketRAGService | None = None,
+        stock_data_adapter: AStockDataAdapter | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.audit = audit
@@ -140,6 +144,7 @@ class PremarketAgent:
         self.metrics = metrics
         self.knowledge_indexer = knowledge_indexer
         self.premarket_rag_service = premarket_rag_service
+        self.stock_data_adapter = stock_data_adapter
         self.scorer = EventScorer()
         self.clusterer = EventClusterer()
         self.theme_detector = ThemeDetector()
@@ -147,7 +152,7 @@ class PremarketAgent:
         self.scenario_builder = ScenarioBuilder()
         self.theme_registry = ThemeRegistry.default()
 
-    def run(self, report_date: date, limit_per_source: int = 30) -> PremarketReport:
+    def run(self, report_date: date, limit_per_source: int | None = None) -> PremarketReport:
         run_id = make_id("pmrun")
         started = perf_counter()
         window = self.calendar.build_window(report_date)
@@ -235,7 +240,7 @@ class PremarketAgent:
             market_view=market_view,
             summary=self._summary(market_view, catalysts, warnings),
             source_status=statuses,
-            news_items=collected[:80],
+            news_items=collected,
             catalysts=catalysts,
             watchlist=watchlist,
             avoid_list=avoid_list,
@@ -422,7 +427,7 @@ class PremarketAgent:
             return
         self.metrics.record(name, value, tags=tags, run_id=run_id)
 
-    def _fetch_provider(self, provider: object, limit: int, fetch_window: FetchWindow) -> NewsProviderResult:
+    def _fetch_provider(self, provider: object, limit: int | None, fetch_window: FetchWindow) -> NewsProviderResult:
         try:
             return provider.fetch(limit=limit, window=fetch_window)
         except TypeError as error:
@@ -769,7 +774,10 @@ class PremarketAgent:
         )
         symbols = sorted(set(item.symbols) | {symbol for name, symbol in SYMBOL_KEYWORDS.items() if name in text})
         category = item.category
-        if any(word in text for word in OFFICIAL_WORDS):
+        preserve_source_category = item.source == A_STOCK_DATA_SOURCE and item.category in A_STOCK_DATA_CATEGORIES
+        if preserve_source_category:
+            category = item.category
+        elif any(word in text for word in OFFICIAL_WORDS):
             category = "official_policy"
         elif sectors:
             category = "industry_catalyst"
@@ -886,9 +894,39 @@ class PremarketAgent:
 
     def _build_watchlist(self, catalysts: list[PremarketCatalyst]) -> list[PremarketTradePlan]:
         plans: list[PremarketTradePlan] = []
+        symbol_seen: set[str] = set()
         sector_counts = Counter(sector for catalyst in catalysts if catalyst.bias == "bullish" for sector in catalyst.sectors)
         for sector, count in sector_counts.most_common(5):
             related = [item for item in catalysts if sector in item.sectors and item.bias == "bullish"]
+            candidates = self._stock_candidates_for_sector(sector)
+            if candidates:
+                for candidate in candidates:
+                    if candidate.symbol in symbol_seen:
+                        continue
+                    symbol_seen.add(candidate.symbol)
+                    plans.append(
+                        PremarketTradePlan(
+                            symbol=candidate.symbol,
+                            name=candidate.name,
+                            theme=candidate.theme,
+                            action="watch",
+                            reason=f"{sector} 出现 {count} 条偏积极盘前催化，a-stock-data 腾讯行情候选",
+                            triggers=[
+                                f"参考区间 {candidate.entry_low}-{candidate.entry_high}",
+                                f"目标价 {candidate.target_price}，止损 {candidate.stop_loss}",
+                                "09:20 后竞价承接确认",
+                            ],
+                            risk_flags=sorted({flag for item in related for flag in item.risk_flags}),
+                            confidence=min(0.95, max(0.3, candidate.score / 2)),
+                            reference_price=candidate.reference_price,
+                            entry_low=candidate.entry_low,
+                            entry_high=candidate.entry_high,
+                            target_price=candidate.target_price,
+                            stop_loss=candidate.stop_loss,
+                            data_source=candidate.data_source,
+                        )
+                    )
+                continue
             plans.append(
                 PremarketTradePlan(
                     symbol=f"板块:{sector}",
@@ -900,7 +938,28 @@ class PremarketAgent:
                     confidence=min(0.85, sum(item.confidence for item in related) / max(1, len(related))),
                 )
             )
-        symbol_seen: set[str] = set()
+        for catalyst in catalysts:
+            if catalyst.category != "quote_candidate":
+                continue
+            for symbol in catalyst.symbols:
+                if symbol in symbol_seen:
+                    continue
+                symbol_seen.add(symbol)
+                plans.append(
+                    PremarketTradePlan(
+                        symbol=symbol,
+                        theme=catalyst.sectors[0] if catalyst.sectors else None,
+                        action="watch",
+                        reason=catalyst.title,
+                        triggers=[
+                            "09:20 后竞价承接确认",
+                            "开盘后不跌破竞价均价",
+                            "结合公告或新闻二次确认",
+                        ],
+                        risk_flags=catalyst.risk_flags,
+                        confidence=catalyst.confidence,
+                    )
+                )
         for catalyst in catalysts:
             if catalyst.bias != "bullish":
                 continue
@@ -919,6 +978,15 @@ class PremarketAgent:
                     )
                 )
         return plans[:10]
+
+    def _stock_candidates_for_sector(self, sector: str, limit: int = 3) -> list[AStockCandidate]:
+        if self.stock_data_adapter is None:
+            return []
+        try:
+            return self.stock_data_adapter.candidates_for_theme(sector, limit=limit)
+        except Exception as error:
+            self.audit.write("a_stock_data_candidates_failed", {"sector": sector, "error": str(error)})
+            return []
 
     def _build_avoid_list(
         self,
