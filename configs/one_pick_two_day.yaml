@@ -1,0 +1,55 @@
+strategy_id: one_pick_two_day_v1
+version: 1.0.0
+mode: paper
+
+selection:
+  force_pick_one: true
+  min_confidence_to_buy: 0.60
+  min_risk_reward_ratio: 1.80
+  max_candidates: 20
+
+scoring_weights:
+  news_strength: 0.30
+  source_credibility: 0.20
+  theme_heat: 0.20
+  liquidity_quality: 0.15
+  risk_adjustment: -0.15
+
+confidence_model:
+  base_confidence: 0.50
+  max_confidence: 0.85
+  evidence_boost_cap: 0.20
+  penalty_floor: 0.20
+
+risk_reward:
+  target_upside_pct: 0.045
+  stop_loss_pct: 0.025
+  min_expected_upside_pct: 0.035
+  max_expected_downside_pct: 0.030
+
+entry_rule:
+  order_type: marketable_limit
+  max_open_gap_pct: 0.055
+  chase_gap_penalty_tag: high_open_chase
+  max_slippage_bps: 30
+
+exit_rule:
+  force_exit_next_trading_day: true
+  take_profit_pct: 0.045
+  stop_loss_pct: 0.025
+  exit_before_close_minutes: 20
+
+learning:
+  enabled: true
+  learning_rate: 0.25
+  max_weight_step: 0.05
+  min_weight: 0.0
+  max_weight: 1.0
+  max_penalty: 1.0
+  state_store: data/strategy_learning
+
+runtime_budget:
+  max_llm_calls: 3
+  max_llm_tokens: 6000
+  max_llm_cost: 1.00
+  max_tool_calls: 40

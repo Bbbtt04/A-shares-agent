@@ -25,3 +25,19 @@ strategies:
     blocked_risk_flags:
       - unverified
       - rumor
+
+  - strategy_id: one_pick_two_day_v1
+    version: 1.0.0
+    enabled: true
+    mode: paper
+    allowed_symbols:
+      - "*"
+    allowed_sides:
+      - buy
+      - sell
+    requires_intel_confirmation: true
+    blocked_risk_flags:
+      - unverified
+      - rumor
+      - regulatory_inquiry
+      - delisting_risk

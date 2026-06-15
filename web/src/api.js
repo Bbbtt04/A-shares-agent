@@ -56,6 +56,46 @@ export function fetchPremarketDebug({ tradingDay, q = '盘前', limit = 200 } = 
   return request(`/api/premarket/debug?${params.toString()}`);
 }
 
+export function fetchOnePickLatest() {
+  return request('/api/one-pick/latest');
+}
+
+export function fetchLlmConfig() {
+  return request('/api/llm/config');
+}
+
+export function updateLlmProvider(payload) {
+  return request('/api/llm/provider', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateLlmAgentRoute(payload) {
+  return request('/api/llm/agent-route', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchOnePickRun(runId) {
+  return request(`/api/one-pick/run/${encodeURIComponent(runId)}`);
+}
+
+export function fetchOnePickLearningState() {
+  return request('/api/one-pick/learning-state');
+}
+
+export function rollbackOnePickLearningState(targetVersion) {
+  return request('/api/one-pick/learning-state/rollback', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ target_version: targetVersion }),
+  });
+}
+
 export function fetchIntradayLatest() {
   return request('/api/intraday/latest');
 }

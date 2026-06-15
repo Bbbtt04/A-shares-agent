@@ -1987,6 +1987,225 @@ kbd {
   color: #555555;
 }
 
+.one-pick-debug-page {
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid #F0F0F0;
+  border-left: 4px solid #111111;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.one-pick-toolbar,
+.one-pick-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.one-pick-toolbar {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.one-pick-toolbar .section-title {
+  margin-bottom: 0;
+}
+
+.one-pick-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.one-pick-summary div {
+  min-height: 64px;
+  padding: 12px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FAFAFA;
+}
+
+.one-pick-summary span,
+.one-pick-summary strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.one-pick-summary span {
+  color: #888888;
+}
+
+.one-pick-summary strong {
+  margin-top: 4px;
+  color: #111111;
+  font-size: 18px;
+}
+
+.one-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.one-pick-card {
+  min-width: 0;
+  min-height: 230px;
+  padding: 12px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FAFAFA;
+}
+
+.one-pick-card h2 {
+  margin: 0 0 10px;
+  color: #555555;
+  font-size: 13px;
+}
+
+.one-pick-json {
+  height: 116px;
+  margin: 0 0 10px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #555555;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.rollback-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.rollback-row input {
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  outline: 0;
+  background: #FFFFFF;
+  color: #111111;
+}
+
+.llm-settings-page {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #F0F0F0;
+  border-left: 4px solid #111111;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.llm-notice {
+  padding: 10px 12px;
+  border: 1px solid #E5E5E5;
+  border-radius: 8px;
+  background: #FAFAFA;
+  color: #555555;
+  font-size: 13px;
+}
+
+.llm-notice code {
+  color: #111111;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.llm-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 12px;
+}
+
+.llm-panel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FAFAFA;
+}
+
+.llm-panel h2 {
+  margin: 0 0 12px;
+  color: #555555;
+  font-size: 13px;
+}
+
+.llm-provider-list,
+.llm-route-list {
+  display: grid;
+  gap: 10px;
+}
+
+.llm-provider-row,
+.llm-route-row {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.llm-row-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.llm-row-heading strong,
+.llm-row-heading span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-row-heading span {
+  color: #777777;
+  font-size: 12px;
+}
+
+.llm-provider-row label,
+.llm-route-row label {
+  display: grid;
+  gap: 4px;
+  color: #666666;
+  font-size: 12px;
+}
+
+.llm-provider-row input,
+.llm-route-row input,
+.llm-route-row select {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #E5E5E5;
+  border-radius: 8px;
+  outline: 0;
+  background: #FFFFFF;
+  color: #111111;
+}
+
+.llm-route-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.llm-usage-panel {
+  background: #FFFFFF;
+}
+
 @media (max-width: 1180px) {
   .pipeline-flow {
     grid-template-columns: 1fr;
@@ -1998,8 +2217,14 @@ kbd {
 
   .pipeline-detail-grid,
   .module-status-grid,
-  .premarket-debug-grid {
+  .premarket-debug-grid,
+  .llm-layout,
+  .one-pick-grid {
     grid-template-columns: 1fr;
+  }
+
+  .llm-route-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .premarket-debug-toolbar,
@@ -2189,6 +2414,7 @@ kbd {
   }
 
   .status-grid,
+  .one-pick-summary,
   .quote-list,
   .quote-list.compact,
   .observability-grid,
