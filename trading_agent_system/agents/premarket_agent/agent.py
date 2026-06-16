@@ -26,6 +26,7 @@ from .builders import RiskFilter, ScenarioBuilder, ThemeDetector
 from .pipeline import EventClusterer, EventScorer
 from .rag.evaluation import RAGEvaluator
 from .rag.rag_service import PreMarketRAGService
+from .recommendation_engine import PremarketRecommendationEngine
 from .schemas import (
     Actionability,
     AuctionSignal,
@@ -151,6 +152,7 @@ class PremarketAgent:
         self.risk_filter = RiskFilter()
         self.scenario_builder = ScenarioBuilder()
         self.theme_registry = ThemeRegistry.default()
+        self.recommendation_engine = PremarketRecommendationEngine()
 
     def run(self, report_date: date, limit_per_source: int | None = None) -> PremarketReport:
         run_id = make_id("pmrun")
@@ -229,6 +231,7 @@ class PremarketAgent:
         morning_brief = self._build_morning_brief(window, catalysts, events, statuses, post_close_digest, theme_seeds, avoid_candidates, scenarios)
         opening_radar = self._build_opening_radar(window, morning_brief)
         watchlist = self._build_watchlist(catalysts)
+        recommendations = self.recommendation_engine.build(watchlist, catalysts)
         avoid_list = self._build_avoid_list(collected, catalysts)
         warnings = self._warnings(statuses, collected)
         market_view = self._market_view(catalysts, warnings)
@@ -243,6 +246,7 @@ class PremarketAgent:
             news_items=collected,
             catalysts=catalysts,
             watchlist=watchlist,
+            recommendations=recommendations,
             avoid_list=avoid_list,
             opening_rules=self._opening_rules(),
             warnings=warnings,
@@ -945,9 +949,11 @@ class PremarketAgent:
                 if symbol in symbol_seen:
                     continue
                 symbol_seen.add(symbol)
+                candidate = self._stock_candidate_for_symbol(catalyst.sectors[0] if catalyst.sectors else None, symbol)
                 plans.append(
                     PremarketTradePlan(
                         symbol=symbol,
+                        name=candidate.name if candidate else None,
                         theme=catalyst.sectors[0] if catalyst.sectors else None,
                         action="watch",
                         reason=catalyst.title,
@@ -958,6 +964,12 @@ class PremarketAgent:
                         ],
                         risk_flags=catalyst.risk_flags,
                         confidence=catalyst.confidence,
+                        reference_price=candidate.reference_price if candidate else None,
+                        entry_low=candidate.entry_low if candidate else None,
+                        entry_high=candidate.entry_high if candidate else None,
+                        target_price=candidate.target_price if candidate else None,
+                        stop_loss=candidate.stop_loss if candidate else None,
+                        data_source=candidate.data_source if candidate else None,
                     )
                 )
         for catalyst in catalysts:
@@ -987,6 +999,14 @@ class PremarketAgent:
         except Exception as error:
             self.audit.write("a_stock_data_candidates_failed", {"sector": sector, "error": str(error)})
             return []
+
+    def _stock_candidate_for_symbol(self, sector: str | None, symbol: str) -> AStockCandidate | None:
+        if not sector:
+            return None
+        for candidate in self._stock_candidates_for_sector(sector, limit=8):
+            if candidate.symbol == symbol:
+                return candidate
+        return None
 
     def _build_avoid_list(
         self,

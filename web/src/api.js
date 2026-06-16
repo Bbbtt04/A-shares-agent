@@ -2,8 +2,14 @@ const jsonHeaders = {
   'Content-Type': 'application/json',
 };
 
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+function apiUrl(path) {
+  return `${apiBaseUrl}${path}`;
+}
+
 async function request(path, options = {}) {
-  const response = await fetch(path, options);
+  const response = await fetch(apiUrl(path), options);
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || `${response.status} ${response.statusText}`);
@@ -101,7 +107,7 @@ export function fetchIntradayLatest() {
 }
 
 export async function fetchReport(name) {
-  const response = await fetch(`/api/reports/${encodeURIComponent(name)}`);
+  const response = await fetch(apiUrl(`/api/reports/${encodeURIComponent(name)}`));
   if (!response.ok) {
     throw new Error(await response.text());
   }

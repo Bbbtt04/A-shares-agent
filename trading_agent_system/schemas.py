@@ -153,6 +153,44 @@ class PremarketTradePlan(StrictBaseModel):
     data_source: str | None = None
 
 
+class PremarketPricePlan(StrictBaseModel):
+    reference_price: float
+    entry_low: float
+    entry_high: float
+    stop_loss: float
+    target_price_1: float
+    target_price_2: float
+    risk_reward_1: float
+    risk_reward_2: float
+    expected_r: float
+
+
+class PremarketRecommendation(StrictBaseModel):
+    symbol: str
+    name: str | None = None
+    theme: str | None = None
+    mode: Literal["conservative", "opportunity", "watch"]
+    rank: int
+    rating: str
+    trade_score: float = Field(ge=0, le=100)
+    confidence: float = Field(ge=0, le=1)
+    reason: str
+    triggers: list[str] = Field(default_factory=list)
+    invalidation: list[str] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+    price_plan: PremarketPricePlan
+    decision_trace: dict[str, Any] = Field(default_factory=dict)
+
+
+class PremarketRecommendationSet(StrictBaseModel):
+    strategy_id: str
+    strategy_version: str
+    objective: str = "risk_reward_ratio"
+    conservative: list[PremarketRecommendation] = Field(default_factory=list)
+    opportunity: list[PremarketRecommendation] = Field(default_factory=list)
+    watch: list[PremarketRecommendation] = Field(default_factory=list)
+
+
 class PremarketReport(StrictBaseModel):
     date: date
     generated_at: datetime = Field(default_factory=utc_now)
@@ -164,6 +202,7 @@ class PremarketReport(StrictBaseModel):
     news_items: list[PremarketNewsItem] = Field(default_factory=list)
     catalysts: list[PremarketCatalyst] = Field(default_factory=list)
     watchlist: list[PremarketTradePlan] = Field(default_factory=list)
+    recommendations: PremarketRecommendationSet | None = None
     avoid_list: list[PremarketTradePlan] = Field(default_factory=list)
     opening_rules: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

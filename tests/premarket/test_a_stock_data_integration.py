@@ -139,3 +139,42 @@ def test_premarket_agent_keeps_a_stock_data_quote_candidates_in_watchlist(tmp_pa
     assert any(catalyst.category == "quote_candidate" and catalyst.bias == "neutral" for catalyst in report.catalysts)
     assert [item.symbol for item in report.watchlist] == ["688981.SH"]
     assert report.watchlist[0].reason == "SMIC(688981.SH) premarket observation candidate"
+
+
+def test_premarket_agent_returns_recommendations_for_a_stock_data_quote_candidates(tmp_path):
+    published_at = datetime(2026, 6, 8, 16, 0, tzinfo=timezone.utc)
+    provider = AStockDataPremarketProvider(
+        hotspot_fetcher=lambda limit: [],
+        stock_news_fetcher=lambda symbols, limit: [],
+        announcement_fetcher=lambda symbols, limit: [],
+        quote_candidate_fetcher=lambda symbols, limit: [
+            {
+                "title": "SMIC(688981.SH) premarket observation candidate",
+                "summary": "reference price 90.0, target 94.5, stop 87.3",
+                "symbol": "688981.SH",
+                "theme": "半导体",
+                "published_at": published_at,
+            }
+        ],
+        symbols=["688981.SH"],
+    )
+    agent = PremarketAgent(
+        event_bus=DurableEventBus(repository=JsonlEventRepository(tmp_path / "events")),
+        audit=AuditLedger(tmp_path / "audit.jsonl"),
+        providers=[provider],
+        calendar=TradingCalendarService(),
+        stock_data_adapter=FakeStockDataAdapter(),
+    )
+
+    report = agent.run(date(2026, 6, 9), limit_per_source=5)
+
+    assert report.recommendations is not None
+    recommendations = [
+        *report.recommendations.conservative,
+        *report.recommendations.opportunity,
+        *report.recommendations.watch,
+    ]
+    assert [item.symbol for item in recommendations] == ["688981.SH"]
+    assert recommendations[0].price_plan.stop_loss == 87.3
+    assert recommendations[0].price_plan.risk_reward_1 == 2.0
+    assert recommendations[0].decision_trace["score_breakdown"]["catalyst_strength"] > 0
