@@ -63,3 +63,16 @@ def test_crawled_documents_step_can_show_fetch_window():
     assert "debug-step-window" in source
     assert "metadata?.window_start" in source
     assert ".debug-step-window" in css
+
+
+def test_premarket_debug_page_shows_a_stock_data_summary():
+    source = MAIN.read_text(encoding="utf-8")
+    css = CSS.read_text(encoding="utf-8")
+
+    assert "aStockData" in source
+    assert "a-stock-data 数据包" in source
+    assert "category_counts" in source
+    assert "同花顺热点" in source
+    assert "盘前观察候选" in source
+    assert "debug-a-stock-data-grid" in source
+    assert ".debug-a-stock-data-grid" in css

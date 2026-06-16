@@ -63,6 +63,12 @@ const DEBUG_STEP_LABELS = {
   crawled_documents: '全部爬取数据',
   raw_documents: '窗口内原始文档',
 };
+const A_STOCK_DATA_CATEGORY_LABELS = {
+  theme_hotspot: '同花顺热点',
+  stock_news: '个股新闻',
+  announcement: '公告',
+  quote_candidate: '盘前观察候选',
+};
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -806,6 +812,7 @@ function PremarketDebugPage({
   const knowledgeResults = data?.knowledge?.query_results || [];
   const ragPacks = data?.rag?.evidence?.payload?.packs || [];
   const evaluationSummary = data?.rag?.evaluation?.payload?.summary || {};
+  const aStockData = data?.a_stock_data || {};
   const [expandedSourceKeys, setExpandedSourceKeys] = useState({});
   const isSourceFetchStep = currentStep?.id === 'source_fetch';
   const crawledItemsBySource = useMemo(() => {
@@ -944,6 +951,23 @@ function PremarketDebugPage({
               <span>禁入 {conclusion.avoid_list?.length || 0}</span>
             </div>
             <p>{conclusion.summary || '暂无盘前报告'}</p>
+          </article>
+          <article className="debug-side-card debug-a-stock-data-card">
+            <h2>a-stock-data 数据包</h2>
+            <div className="context-strip">
+              <span>{aStockData.enabled ? '已启用' : '未启用'}</span>
+              <span>{aStockData.status || '-'}</span>
+              <span>{aStockData.in_window_count || 0}/{aStockData.crawled_count || 0} 入窗</span>
+            </div>
+            <div className="debug-a-stock-data-grid">
+              {Object.entries(A_STOCK_DATA_CATEGORY_LABELS).map(([category, label]) => (
+                <span key={category}>
+                  <strong>{aStockData.category_counts?.[category] || 0}</strong>
+                  {label}
+                </span>
+              ))}
+            </div>
+            <p>{(aStockData.symbols || []).length > 0 ? `配置标的：${aStockData.symbols.join('、')}` : '未配置盘前标的'}</p>
           </article>
           <article className="debug-side-card">
             <h2>落入知识库</h2>
@@ -1521,6 +1545,7 @@ function PremarketPanel({ report, loading, error, onRefresh, onRun }) {
   const watchlist = report?.watchlist || [];
   const avoidList = report?.avoid_list || [];
   const sourceStatus = report?.source_status || [];
+  const recommendations = report?.recommendations || {};
   const tone = report?.market_view || 'empty';
   return (
     <section className={`premarket-panel premarket-${tone}`}>
@@ -1564,6 +1589,7 @@ function PremarketPanel({ report, loading, error, onRefresh, onRun }) {
             <span>窗口：{formatDateTime(report.window_start)} {'->'} {formatDateTime(report.window_end)}</span>
             <span>生成：{formatDateTime(report.generated_at)}</span>
           </div>
+          <PremarketRecommendationSection recommendations={recommendations} />
           <div className="premarket-layout">
             <div className="premarket-column">
               <h2>重点催化</h2>
@@ -1579,7 +1605,7 @@ function PremarketPanel({ report, loading, error, onRefresh, onRun }) {
             <div className="premarket-column">
               <h2>观察清单</h2>
               <ul className="premarket-list">
-                {watchlist.length === 0 ? <li>暂无</li> : watchlist.slice(0, 5).map((item) => (
+                {watchlist.length === 0 ? <li>暂无</li> : watchlist.map((item) => (
                   <li key={item.symbol}>
                     <strong>{item.symbol}</strong>
                     <span>{item.reason}</span>
@@ -1607,6 +1633,69 @@ function PremarketPanel({ report, loading, error, onRefresh, onRun }) {
         <div className="premarket-empty">还没有盘前简报，点击运行盘前 Agent 生成。</div>
       )}
     </section>
+  );
+}
+
+function PremarketRecommendationSection({ recommendations }) {
+  const groups = [
+    { key: 'conservative', title: '稳健型', helper: '高确认、风险可控' },
+    { key: 'opportunity', title: '机会型', helper: '赔率补偿不确定性' },
+    { key: 'watch', title: '观察型', helper: '等待触发条件' },
+  ];
+  const hasRecommendations = groups.some((group) => (recommendations?.[group.key] || []).length > 0);
+  return (
+    <section className="premarket-recommendation-section">
+      <div className="premarket-recommendation-header">
+        <h2>今日荐股计划</h2>
+        <span>{recommendations?.strategy_id || 'premarket_rr_v1'} · 风险收益比优先</span>
+      </div>
+      {hasRecommendations ? (
+        <div className="premarket-recommendation-grid">
+          {groups.map((group) => (
+            <article className="premarket-recommendation-group" key={group.key}>
+              <div className="premarket-recommendation-group-title">
+                <strong>{group.title}</strong>
+                <span>{group.helper}</span>
+              </div>
+              {(recommendations?.[group.key] || []).length === 0 ? (
+                <p className="premarket-recommendation-empty">暂无达标标的</p>
+              ) : (
+                <ul className="premarket-recommendation-list">
+                  {recommendations[group.key].map((item) => (
+                    <PremarketRecommendationItem item={item} key={`${group.key}-${item.symbol}`} />
+                  ))}
+                </ul>
+              )}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="premarket-recommendation-empty">暂无风险收益比达标的荐股计划</div>
+      )}
+    </section>
+  );
+}
+
+function PremarketRecommendationItem({ item }) {
+  const pricePlan = item.price_plan || {};
+  return (
+    <li>
+      <div className="premarket-recommendation-topline">
+        <strong>{item.symbol}</strong>
+        <span>{item.rating || '-'}</span>
+        <small>{formatScore(item.trade_score)}分</small>
+      </div>
+      <div className="premarket-recommendation-prices">
+        <span>入场 {formatPrice(pricePlan.entry_low)}-{formatPrice(pricePlan.entry_high)}</span>
+        <span>止损 {formatPrice(pricePlan.stop_loss)}</span>
+        <span>目标 {formatPrice(pricePlan.target_price_1)}/{formatPrice(pricePlan.target_price_2)}</span>
+      </div>
+      <div className="premarket-recommendation-metrics">
+        <span>RR {formatScore(pricePlan.risk_reward_1)}/{formatScore(pricePlan.risk_reward_2)}</span>
+        <span>预期R {formatScore(pricePlan.expected_r)}</span>
+      </div>
+      <p>{item.reason}</p>
+    </li>
   );
 }
 

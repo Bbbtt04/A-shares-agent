@@ -1,0 +1,12 @@
+.git
+.venv
+.pytest_cache
+__pycache__
+*.py[cod]
+*.egg-info
+data
+logs
+reports/daily
+reports/premarket
+web/node_modules
+web/dist

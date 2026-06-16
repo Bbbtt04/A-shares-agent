@@ -256,6 +256,134 @@ h1 {
   font-size: 12px;
 }
 
+.premarket-recommendation-section {
+  margin-bottom: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #F0F0F0;
+}
+
+.premarket-recommendation-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.premarket-recommendation-header h2 {
+  margin: 0;
+  color: #111111;
+  font-size: 15px;
+}
+
+.premarket-recommendation-header span,
+.premarket-recommendation-group-title span,
+.premarket-recommendation-empty,
+.premarket-recommendation-metrics {
+  color: #888888;
+  font-size: 12px;
+}
+
+.premarket-recommendation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.premarket-recommendation-group {
+  min-width: 0;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.premarket-recommendation-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+  padding: 10px;
+  border-bottom: 1px solid #F0F0F0;
+}
+
+.premarket-recommendation-group-title strong {
+  color: #111111;
+}
+
+.premarket-recommendation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.premarket-recommendation-list li {
+  padding: 10px;
+  border-bottom: 1px solid #F0F0F0;
+}
+
+.premarket-recommendation-list li:last-child {
+  border-bottom: 0;
+}
+
+.premarket-recommendation-topline,
+.premarket-recommendation-prices,
+.premarket-recommendation-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.premarket-recommendation-topline {
+  margin-bottom: 6px;
+}
+
+.premarket-recommendation-topline strong {
+  color: #111111;
+}
+
+.premarket-recommendation-topline span {
+  min-width: 28px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #111111;
+  color: #FFFFFF;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.premarket-recommendation-topline small {
+  color: #555555;
+  font-size: 12px;
+}
+
+.premarket-recommendation-prices {
+  color: #555555;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.premarket-recommendation-metrics {
+  margin-top: 4px;
+}
+
+.premarket-recommendation-list p {
+  margin: 6px 0 0;
+  color: #555555;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.premarket-recommendation-empty {
+  margin: 0;
+  padding: 10px;
+}
+
 .premarket-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
@@ -1987,6 +2115,30 @@ kbd {
   color: #555555;
 }
 
+.debug-a-stock-data-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.debug-a-stock-data-grid span {
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid #F0F0F0;
+  border-radius: 8px;
+  background: #FAFAFA;
+  color: #555555;
+  font-size: 12px;
+}
+
+.debug-a-stock-data-grid strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #111111;
+  font-size: 18px;
+}
+
 .one-pick-debug-page {
   margin-bottom: 16px;
   padding: 16px;
@@ -2460,6 +2612,7 @@ kbd {
   }
 
   .premarket-summary,
+  .premarket-recommendation-grid,
   .premarket-layout {
     grid-template-columns: 1fr;
   }
