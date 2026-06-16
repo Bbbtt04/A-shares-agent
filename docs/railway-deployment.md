@@ -2,6 +2,50 @@
 
 This repository is prepared for a two-service Railway project.
 
+## Current deployment
+
+- Project: `A-shares-agent`
+- API service: `https://api-production-aabb.up.railway.app`
+- Web service: `https://web-production-d6ea7.up.railway.app`
+
+## CLI deployment flow
+
+The current machine needs a Railway login before deployment:
+
+```powershell
+npx --yes @railway/cli login
+```
+
+After login, create one project with two services:
+
+```powershell
+npx --yes @railway/cli init --name A-shares-agent
+npx --yes @railway/cli add --service api
+npx --yes @railway/cli add --service web
+```
+
+Generate public domains for both services:
+
+```powershell
+npx --yes @railway/cli domain --service api
+npx --yes @railway/cli domain --service web
+```
+
+Set variables before deploying the web service so Vite bakes in the API URL:
+
+```powershell
+npx --yes @railway/cli variable set VITE_API_BASE_URL=https://<api-service-domain> --service web
+npx --yes @railway/cli variable set API_PROXY_URL=https://<api-service-domain> --service web
+npx --yes @railway/cli variable set CORS_ORIGINS=https://<web-service-domain> --service api
+```
+
+Deploy both services:
+
+```powershell
+npx --yes @railway/cli up . --service api --detach
+npx --yes @railway/cli up .\web --path-as-root --service web --detach
+```
+
 ## API service
 
 - Root directory: repository root
@@ -32,7 +76,9 @@ Set this Railway variable on the web service:
 
 ```text
 VITE_API_BASE_URL=https://<api-service-domain>
+API_PROXY_URL=https://<api-service-domain>
 ```
 
 If `VITE_API_BASE_URL` is empty, the frontend uses same-origin `/api/...`, which is
-still useful for local Vite development with the existing dev proxy.
+still useful for local Vite development with the existing dev proxy and for the
+Railway Caddy reverse proxy.
