@@ -7,7 +7,7 @@ import sys
 import time
 from datetime import date as Date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,8 +33,27 @@ APP_CONFIG = ROOT / "configs" / "app.yaml"
 EVENT_DIR = ROOT / "data" / "events"
 TRACE_DIR = ROOT / "data" / "traces"
 METRICS_DIR = ROOT / "data" / "metrics"
+AUDIT_DIR = ROOT / "data" / "audit"
 KNOWLEDGE_PATH = ROOT / "data" / "knowledge.sqlite"
 A_STOCK_DATA_SOURCE = "a-stock-data/premarket"
+ONE_PICK_CHECKPOINT_DIR = ROOT / "data" / "runtime" / "checkpoints"
+ONE_PICK_LEARNING_DIR = ROOT / "data" / "strategy_learning"
+LLM_RUNTIME_CONFIG = ROOT / "data" / "config" / "llm_runtime.json"
+DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
+def _env_list(name: str) -> list[str]:
+    value = os.getenv(name, "")
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _cors_origin_regex() -> str | None:
+    configured = os.getenv("CORS_ORIGIN_REGEX")
+    if configured is not None:
+        return configured or None
+    if os.getenv("RAILWAY_ENVIRONMENT"):
+        return r"https://.*\.up\.railway\.app"
+    return None
 
 
 class RunRequest(BaseModel):
@@ -61,6 +80,26 @@ class RunAllResult(BaseModel):
 
 class QuoteRequest(BaseModel):
     symbols: list[str] | None = None
+
+
+class OnePickRollbackRequest(BaseModel):
+    target_version: str
+
+
+class LlmProviderUpdateRequest(BaseModel):
+    provider: str
+    api_key: str | None = None
+    base_url: str | None = None
+    default_model: str | None = None
+
+
+class LlmAgentRouteUpdateRequest(BaseModel):
+    agent: str
+    provider: str
+    model: str
+    max_llm_calls: int | None = Field(default=None, ge=0)
+    max_llm_tokens: int | None = Field(default=None, ge=0)
+    max_llm_cost: float | None = Field(default=None, ge=0)
 
 
 JOBS: dict[str, tuple[str, list[str]]] = {
@@ -90,7 +129,8 @@ JOBS: dict[str, tuple[str, list[str]]] = {
 app = FastAPI(title="A股 Agent Console API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[*DEFAULT_CORS_ORIGINS, *_env_list("CORS_ORIGINS")],
+    allow_origin_regex=_cors_origin_regex(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -108,6 +148,71 @@ def health() -> dict[str, object]:
             "mode": "paper",
         },
     }
+
+
+@app.get("/api/llm/config")
+def llm_runtime_config() -> dict[str, object]:
+    config = _load_llm_runtime_config()
+    return {
+        "providers": {
+            provider: _redacted_provider_config(provider_config)
+            for provider, provider_config in config.get("providers", {}).items()
+            if isinstance(provider_config, dict)
+        },
+        "agent_routes": config.get("agent_routes", {}),
+        "usage": _llm_usage_summary(),
+        "config_path": str(LLM_RUNTIME_CONFIG),
+    }
+
+
+@app.post("/api/llm/provider")
+def update_llm_provider(request: LlmProviderUpdateRequest) -> dict[str, object]:
+    provider = request.provider.strip()
+    if not provider:
+        raise HTTPException(status_code=400, detail="provider is required")
+    config = _load_llm_runtime_config()
+    providers = config.setdefault("providers", {})
+    provider_config = dict(providers.get(provider, {})) if isinstance(providers.get(provider), dict) else {}
+    if request.api_key is not None and request.api_key.strip():
+        provider_config["api_key"] = request.api_key.strip()
+    if request.base_url is not None:
+        provider_config["base_url"] = request.base_url.strip()
+    if request.default_model is not None:
+        provider_config["default_model"] = request.default_model.strip()
+    providers[provider] = provider_config
+    _save_llm_runtime_config(config)
+    return llm_runtime_config()
+
+
+@app.post("/api/llm/agent-route")
+def update_llm_agent_route(request: LlmAgentRouteUpdateRequest) -> dict[str, object]:
+    agent = request.agent.strip()
+    provider = request.provider.strip()
+    model = request.model.strip()
+    if not agent:
+        raise HTTPException(status_code=400, detail="agent is required")
+    if not provider:
+        raise HTTPException(status_code=400, detail="provider is required")
+    if not model:
+        raise HTTPException(status_code=400, detail="model is required")
+    config = _load_llm_runtime_config()
+    routes = config.setdefault("agent_routes", {})
+    routes[agent] = {
+        "provider": provider,
+        "model": model,
+        "budget": {
+            "max_llm_calls": request.max_llm_calls,
+            "max_llm_tokens": request.max_llm_tokens,
+            "max_llm_cost": request.max_llm_cost,
+        },
+    }
+    _save_llm_runtime_config(config)
+    return llm_runtime_config()
+
+
+@app.get("/api/llm/usage")
+def llm_usage() -> dict[str, object]:
+    return {"usage": _llm_usage_summary()}
 
 
 @app.post("/api/run/{job}", response_model=RunResult)
@@ -394,6 +499,38 @@ def decision_traces(
     return {"intent_id": intent_id, "run_id": run_id, "timeline": timeline[:limit]}
 
 
+@app.get("/api/one-pick/latest")
+def one_pick_latest() -> dict[str, object]:
+    return _one_pick_debug_snapshot()
+
+
+@app.get("/api/one-pick/run/{run_id}")
+def one_pick_run(run_id: str) -> dict[str, object]:
+    return _one_pick_debug_snapshot(run_id=run_id)
+
+
+@app.get("/api/one-pick/learning-state")
+def one_pick_learning_state() -> dict[str, object]:
+    return {"learning_state": _one_pick_learning_state()}
+
+
+@app.post("/api/one-pick/learning-state/rollback")
+def one_pick_learning_rollback(request: OnePickRollbackRequest | dict[str, object]) -> dict[str, object]:
+    target_version = request.target_version if isinstance(request, OnePickRollbackRequest) else request.get("target_version")
+    if not target_version:
+        raise HTTPException(status_code=400, detail="target_version is required")
+    learning_state = _one_pick_learning_state()
+    versions = learning_state["versions"]
+    if target_version not in {str(version.get("version")) for version in versions if version.get("version") is not None}:
+        raise HTTPException(status_code=404, detail=f"learning version not found: {target_version}")
+    ONE_PICK_LEARNING_DIR.mkdir(parents=True, exist_ok=True)
+    (ONE_PICK_LEARNING_DIR / "one_pick_current.json").write_text(
+        json.dumps({"current_version": target_version}, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    return {"learning_state": _one_pick_learning_state()}
+
+
 @app.get("/api/rag/debug")
 def rag_debug(
     q: str,
@@ -529,6 +666,404 @@ def _payload_intent_id(payload: dict[str, object]) -> str | None:
         nested = payload.get(key)
         if isinstance(nested, dict) and nested.get("intent_id"):
             return str(nested["intent_id"])
+    return None
+
+
+def _default_llm_runtime_config() -> dict[str, object]:
+    return {
+        "providers": {
+            "openai": {"api_key": "", "base_url": "https://api.openai.com/v1", "default_model": "gpt-4.1-mini"},
+            "deepseek": {"api_key": "", "base_url": "https://api.deepseek.com", "default_model": "deepseek-chat"},
+            "qwen": {"api_key": "", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "default_model": "qwen-plus"},
+        },
+        "agent_routes": {
+            "premarket_agent": {
+                "provider": "openai",
+                "model": "gpt-4.1-mini",
+                "budget": {"max_llm_calls": 4, "max_llm_tokens": 8000, "max_llm_cost": 1.0},
+            },
+            "one_pick_agent": {
+                "provider": "openai",
+                "model": "gpt-4.1-mini",
+                "budget": {"max_llm_calls": 3, "max_llm_tokens": 6000, "max_llm_cost": 1.0},
+            },
+            "review_agent": {
+                "provider": "openai",
+                "model": "gpt-4.1-mini",
+                "budget": {"max_llm_calls": 2, "max_llm_tokens": 4000, "max_llm_cost": 0.5},
+            },
+        },
+    }
+
+
+def _load_llm_runtime_config() -> dict[str, object]:
+    default = _default_llm_runtime_config()
+    if not LLM_RUNTIME_CONFIG.exists():
+        return default
+    try:
+        loaded = json.loads(LLM_RUNTIME_CONFIG.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return default
+    if not isinstance(loaded, dict):
+        return default
+    return _deep_merge(default, loaded)
+
+
+def _save_llm_runtime_config(config: dict[str, object]) -> None:
+    LLM_RUNTIME_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    LLM_RUNTIME_CONFIG.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _deep_merge(base: dict[str, object], overlay: dict[str, object]) -> dict[str, object]:
+    merged = dict(base)
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(dict(merged[key]), value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _redacted_provider_config(provider_config: dict[str, object]) -> dict[str, object]:
+    api_key = str(provider_config.get("api_key") or "")
+    return {
+        "api_key_set": bool(api_key),
+        "api_key_preview": _api_key_preview(api_key),
+        "base_url": provider_config.get("base_url") or "",
+        "default_model": provider_config.get("default_model") or "",
+    }
+
+
+def _api_key_preview(api_key: str) -> str:
+    if not api_key:
+        return ""
+    if len(api_key) <= 8:
+        return "*" * len(api_key)
+    return f"{api_key[:3]}...{api_key[-4:]}"
+
+
+def _llm_usage_summary() -> dict[str, object]:
+    records = _llm_audit_records()
+    by_provider: dict[str, dict[str, float]] = {}
+    by_agent: dict[str, dict[str, float]] = {}
+    total = {"calls": 0.0, "tokens": 0.0, "cost": 0.0}
+    recent: list[dict[str, object]] = []
+    for record in records:
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        provider = str(payload.get("provider_name") or "unknown")
+        agent = str(payload.get("agent") or payload.get("agent_name") or "unknown")
+        tokens = float(payload.get("usage_total") or payload.get("total_tokens") or 0)
+        cost = float(payload.get("estimated_cost") or payload.get("cost") or 0)
+        for bucket in (total, by_provider.setdefault(provider, {"calls": 0.0, "tokens": 0.0, "cost": 0.0})):
+            bucket["calls"] += 1
+            bucket["tokens"] += tokens
+            bucket["cost"] += cost
+        agent_bucket = by_agent.setdefault(agent, {"calls": 0.0, "tokens": 0.0, "cost": 0.0})
+        agent_bucket["calls"] += 1
+        agent_bucket["tokens"] += tokens
+        agent_bucket["cost"] += cost
+        recent.append(
+            {
+                "ts": record.get("ts"),
+                "provider": provider,
+                "agent": agent,
+                "tokens": tokens,
+                "cost": cost,
+                "cache_hit": payload.get("cache_hit"),
+            }
+        )
+    return {
+        "total": _usage_ints(total),
+        "by_provider": {key: _usage_ints(value) for key, value in by_provider.items()},
+        "by_agent": {key: _usage_ints(value) for key, value in by_agent.items()},
+        "recent": list(reversed(recent[-10:])),
+    }
+
+
+def _llm_audit_records() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for path in sorted(AUDIT_DIR.glob("*.jsonl")) if AUDIT_DIR.exists() else []:
+        for row in _read_jsonl_file(path):
+            if row.get("event_type") == "llm.call":
+                rows.append(row)
+    rows.sort(key=lambda row: str(row.get("ts") or ""))
+    return rows
+
+
+def _usage_ints(value: dict[str, float]) -> dict[str, float | int]:
+    return {
+        "calls": int(value.get("calls", 0)),
+        "tokens": int(value.get("tokens", 0)),
+        "cost": round(float(value.get("cost", 0)), 6),
+    }
+
+
+def _one_pick_debug_snapshot(run_id: str | None = None) -> dict[str, object]:
+    checkpoints = _load_one_pick_checkpoints(run_id=run_id)
+    resolved_run_id = run_id or _latest_run_id(checkpoints)
+    if resolved_run_id is not None:
+        checkpoints = [item for item in checkpoints if item.get("run_id") == resolved_run_id]
+
+    traces = [
+        trace.model_dump(mode="json")
+        for trace in TraceLogger(TRACE_DIR).load(run_id=resolved_run_id, agent="one_pick_agent", limit=200)
+    ] if resolved_run_id else []
+    metrics = [
+        metric.model_dump(mode="json")
+        for metric in MetricsRecorder(METRICS_DIR).load(run_id=resolved_run_id, limit=200)
+    ] if resolved_run_id else []
+    events = _load_one_pick_events(run_id=resolved_run_id)
+    learning_state = _one_pick_learning_state()
+    selected_stock = _first_present(
+        [_extract_payload(checkpoints, ("selected_stock", "selection", "selected"))],
+        _extract_event_payload(events, ("selected_stock", "selection", "selected")),
+    )
+    selected_stock = _normalize_selected_stock(selected_stock)
+    trade_plan = _first_present(
+        [_extract_payload(checkpoints, ("trade_plan", "plan"))],
+        _extract_event_payload(events, ("trade_plan", "plan")),
+    )
+    fills = [
+        event["payload"]
+        for event in events
+        if event["topic"] in {"one_pick.buy_filled", "one_pick.sell_filled"}
+    ]
+    outcome = _first_present(
+        [_extract_payload(checkpoints, ("outcome",))],
+        _extract_event_payload(events, ("outcome", "review", "result")),
+    )
+    budget_usage = _one_pick_budget_usage(metrics, checkpoints)
+    evidence_refs = sorted(
+        {
+            str(ref)
+            for item in [*checkpoints, *traces, *events]
+            for ref in item.get("evidence_ids", [])
+            if ref
+        }
+    )
+    for value in (selected_stock, trade_plan, outcome):
+        if isinstance(value, dict):
+            evidence_refs.extend(str(ref) for ref in value.get("evidence_ids", []) if ref)
+    evidence_refs = sorted(set(evidence_refs))
+    trace_refs = [
+        {
+            "trace_id": trace["trace_id"],
+            "step": trace["step"],
+            "status": trace["status"],
+            "output_refs": trace.get("output_refs", []),
+            "evidence_ids": trace.get("evidence_ids", []),
+        }
+        for trace in traces
+    ]
+    latest_checkpoint = checkpoints[-1] if checkpoints else None
+    return {
+        "status": "ok" if resolved_run_id and (checkpoints or events or traces) else "empty",
+        "run_id": resolved_run_id,
+        "trading_day": _first_non_empty([item.get("trading_day") for item in checkpoints + events]),
+        "selected_stock": selected_stock,
+        "trade_plan": trade_plan,
+        "fills": fills,
+        "outcome": outcome,
+        "learning_state": learning_state,
+        "learning_version": learning_state.get("current_version"),
+        "learning_update": learning_state.get("current"),
+        "checkpoints": checkpoints,
+        "checkpoint_timeline": [
+            {
+                "checkpoint_id": item.get("checkpoint_id"),
+                "step": item.get("step"),
+                "status": item.get("status"),
+                "updated_at": item.get("updated_at") or item.get("created_at"),
+            }
+            for item in checkpoints
+        ],
+        "trace_refs": trace_refs,
+        "evidence_refs": evidence_refs,
+        "budget_usage": budget_usage,
+        "events": events,
+        "latest_checkpoint": latest_checkpoint,
+    }
+
+
+def _load_one_pick_checkpoints(*, run_id: str | None = None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in _read_jsonl_dir(ONE_PICK_CHECKPOINT_DIR):
+        item_run_id = item.get("run_id")
+        agent = str(item.get("agent") or "")
+        if run_id is not None and item_run_id != run_id:
+            continue
+        if agent and "one_pick" not in agent and not str(item.get("step") or "").startswith("one_pick"):
+            continue
+        rows.append(item)
+    rows.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""))
+    return rows
+
+
+def _load_one_pick_events(*, run_id: str | None = None) -> list[dict[str, Any]]:
+    repository = JsonlEventRepository(EVENT_DIR)
+    events: list[dict[str, Any]] = []
+    for topic in repository.list_topics():
+        if not topic.startswith("one.pick") and not topic.startswith("one_pick"):
+            continue
+        normalized_topic = _normalize_one_pick_topic(topic)
+        for envelope in repository.load_envelopes(topic, run_id=run_id, limit=200):
+            events.append(
+                {
+                    "event_id": envelope.event_id,
+                    "topic": normalized_topic,
+                    "producer": envelope.producer,
+                    "run_id": envelope.run_id,
+                    "trading_day": envelope.trading_day.isoformat() if envelope.trading_day else None,
+                    "created_at": envelope.created_at.isoformat(),
+                    "evidence_ids": envelope.evidence_ids,
+                    "payload": envelope.payload,
+                }
+            )
+    events.sort(key=lambda item: str(item.get("created_at") or ""))
+    return events
+
+
+def _normalize_one_pick_topic(topic: str) -> str:
+    if topic.startswith("one.pick."):
+        return f"one_pick.{topic.removeprefix('one.pick.').replace('.', '_')}"
+    return topic
+
+
+def _one_pick_learning_state() -> dict[str, object]:
+    versions_path = ONE_PICK_LEARNING_DIR / "one_pick_versions.jsonl"
+    current_path = ONE_PICK_LEARNING_DIR / "one_pick_current.json"
+    versions = _read_jsonl_file(versions_path)
+    current_version = None
+    if current_path.exists():
+        try:
+            current_data = json.loads(current_path.read_text(encoding="utf-8"))
+            current_version = current_data.get("current_version") or current_data.get("version")
+        except json.JSONDecodeError:
+            current_version = None
+    if current_version is None and versions:
+        current_version = versions[-1].get("version")
+    current = next((item for item in reversed(versions) if item.get("version") == current_version), None)
+    return {
+        "current_version": current_version,
+        "current": current,
+        "versions": versions,
+        "version_count": len(versions),
+        "path": str(ONE_PICK_LEARNING_DIR),
+    }
+
+
+def _read_jsonl_dir(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for file_path in sorted(path.glob("*.jsonl")):
+        rows.extend(_read_jsonl_file(file_path))
+    return rows
+
+
+def _read_jsonl_file(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(data, dict):
+                rows.append(data)
+    return rows
+
+
+def _latest_run_id(checkpoints: list[dict[str, Any]]) -> str | None:
+    for item in reversed(checkpoints):
+        if item.get("run_id"):
+            return str(item["run_id"])
+    return None
+
+
+def _extract_payload(items: list[dict[str, Any]], keys: tuple[str, ...]) -> object | None:
+    for item in reversed(items):
+        payload = item.get("payload")
+        found = _find_nested_value(payload, keys)
+        if found is not None:
+            return found
+    return None
+
+
+def _extract_event_payload(events: list[dict[str, Any]], keys: tuple[str, ...]) -> object | None:
+    for event in reversed(events):
+        found = _find_nested_value(event.get("payload"), keys)
+        if found is not None:
+            return found
+    return None
+
+
+def _find_nested_value(value: object, keys: tuple[str, ...]) -> object | None:
+    if isinstance(value, dict):
+        for key in keys:
+            if key in value:
+                return value[key]
+        for nested in value.values():
+            found = _find_nested_value(nested, keys)
+            if found is not None:
+                return found
+    if isinstance(value, list):
+        for nested in value:
+            found = _find_nested_value(nested, keys)
+            if found is not None:
+                return found
+    return None
+
+
+def _normalize_selected_stock(value: object | None) -> object | None:
+    if not isinstance(value, dict):
+        return value
+    symbol = value.get("symbol") or value.get("selected_symbol")
+    if not symbol:
+        return value
+    normalized = dict(value)
+    normalized["symbol"] = symbol
+    if value.get("selected_name") and not normalized.get("name"):
+        normalized["name"] = value["selected_name"]
+    return normalized
+
+
+def _one_pick_budget_usage(metrics: list[dict[str, Any]], checkpoints: list[dict[str, Any]]) -> dict[str, float]:
+    usage: dict[str, float] = {}
+    for metric in metrics:
+        name = str(metric.get("name") or "")
+        if "budget" not in name and "token" not in name and "cost" not in name:
+            continue
+        usage[name] = usage.get(name, 0.0) + float(metric.get("value") or 0)
+    for checkpoint in checkpoints:
+        payload = checkpoint.get("payload")
+        if isinstance(payload, dict) and isinstance(payload.get("budget"), dict):
+            for key, value in payload["budget"].items():
+                if isinstance(value, int | float):
+                    usage[key] = usage.get(key, 0.0) + float(value)
+    return usage
+
+
+def _first_present(candidates: list[object | None], fallback: object | None) -> object | None:
+    for item in candidates:
+        if item is not None:
+            return item
+    return fallback
+
+
+def _first_non_empty(values: list[object | None]) -> object | None:
+    for value in values:
+        if value not in (None, ""):
+            return value
     return None
 
 

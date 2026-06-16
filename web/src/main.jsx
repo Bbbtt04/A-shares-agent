@@ -29,7 +29,9 @@ import {
   fetchDecisionTraces,
   fetchHealth,
   fetchIntradayLatest,
+  fetchLlmConfig,
   fetchMarketQuotes,
+  fetchOnePickLatest,
   fetchPremarketContext,
   fetchPremarketDebug,
   fetchPremarketLatest,
@@ -39,8 +41,11 @@ import {
   fetchReports,
   fetchRiskApprovalQueue,
   fetchStockPage,
+  rollbackOnePickLearningState,
   runAll,
   runJob,
+  updateLlmAgentRoute,
+  updateLlmProvider,
 } from './api.js';
 import AgentArchitecturePage from './AgentArchitecturePage.jsx';
 import {
@@ -73,11 +78,15 @@ function pageEyebrow(activePage) {
   return {
     console: 'Paper Trading',
     'premarket-debug': 'Premarket Debug',
+    'one-pick-debug': '单票策略调试',
+    'llm-settings': '模型配置',
     architecture: 'Architecture Map',
   }[activePage] || 'Paper Trading';
 }
 
 function pageTitle(activePage) {
+  if (activePage === 'one-pick-debug') return '单票两日策略调试';
+  if (activePage === 'llm-settings') return 'Agent 模型与密钥配置';
   return {
     console: 'A股 Agent 控制台',
     'premarket-debug': '盘前信息 Agent 调试',
@@ -124,6 +133,15 @@ function App() {
   const [premarketDebugError, setPremarketDebugError] = useState('');
   const [premarketDebugQuery, setPremarketDebugQuery] = useState('机器人');
   const [selectedDebugStep, setSelectedDebugStep] = useState('raw_documents');
+  const [onePickDebug, setOnePickDebug] = useState(null);
+  const [onePickDebugLoading, setOnePickDebugLoading] = useState(false);
+  const [onePickDebugError, setOnePickDebugError] = useState('');
+  const [onePickRollbackTarget, setOnePickRollbackTarget] = useState('');
+  const [llmConfig, setLlmConfig] = useState(null);
+  const [llmConfigLoading, setLlmConfigLoading] = useState(false);
+  const [llmConfigError, setLlmConfigError] = useState('');
+  const [llmProviderDrafts, setLlmProviderDrafts] = useState({});
+  const [llmRouteDrafts, setLlmRouteDrafts] = useState({});
   const [intraday, setIntraday] = useState({ report: null, event: null });
   const [intradayLoading, setIntradayLoading] = useState(false);
   const [intradayError, setIntradayError] = useState('');
@@ -220,6 +238,93 @@ function App() {
     }
   }, [date, premarketDebugQuery]);
 
+  const refreshOnePickDebug = useCallback(async () => {
+    setOnePickDebugLoading(true);
+    setOnePickDebugError('');
+    try {
+      const data = await fetchOnePickLatest();
+      setOnePickDebug(data);
+      setOnePickRollbackTarget(data.learning_state?.current_version || '');
+    } catch (error) {
+      setOnePickDebugError(error.message);
+    } finally {
+      setOnePickDebugLoading(false);
+    }
+  }, []);
+
+  const rollbackOnePick = useCallback(async () => {
+    if (!onePickRollbackTarget.trim()) return;
+    setOnePickDebugLoading(true);
+    setOnePickDebugError('');
+    try {
+      await rollbackOnePickLearningState(onePickRollbackTarget.trim());
+      await refreshOnePickDebug();
+    } catch (error) {
+      setOnePickDebugError(error.message);
+    } finally {
+      setOnePickDebugLoading(false);
+    }
+  }, [onePickRollbackTarget, refreshOnePickDebug]);
+
+  const refreshLlmConfig = useCallback(async () => {
+    setLlmConfigLoading(true);
+    setLlmConfigError('');
+    try {
+      const data = await fetchLlmConfig();
+      setLlmConfig(data);
+      setLlmProviderDrafts(buildProviderDrafts(data.providers || {}));
+      setLlmRouteDrafts(buildRouteDrafts(data.agent_routes || {}));
+    } catch (error) {
+      setLlmConfigError(error.message);
+    } finally {
+      setLlmConfigLoading(false);
+    }
+  }, []);
+
+  const saveLlmProvider = useCallback(async (provider) => {
+    const draft = llmProviderDrafts[provider] || {};
+    setLlmConfigLoading(true);
+    setLlmConfigError('');
+    try {
+      const data = await updateLlmProvider({
+        provider,
+        api_key: draft.api_key || undefined,
+        base_url: draft.base_url || '',
+        default_model: draft.default_model || '',
+      });
+      setLlmConfig(data);
+      setLlmProviderDrafts(buildProviderDrafts(data.providers || {}));
+      setLlmRouteDrafts(buildRouteDrafts(data.agent_routes || {}));
+    } catch (error) {
+      setLlmConfigError(error.message);
+    } finally {
+      setLlmConfigLoading(false);
+    }
+  }, [llmProviderDrafts]);
+
+  const saveLlmRoute = useCallback(async (agent) => {
+    const draft = llmRouteDrafts[agent] || {};
+    setLlmConfigLoading(true);
+    setLlmConfigError('');
+    try {
+      const data = await updateLlmAgentRoute({
+        agent,
+        provider: draft.provider || 'openai',
+        model: draft.model || '',
+        max_llm_calls: nullableNumber(draft.max_llm_calls),
+        max_llm_tokens: nullableNumber(draft.max_llm_tokens),
+        max_llm_cost: nullableNumber(draft.max_llm_cost),
+      });
+      setLlmConfig(data);
+      setLlmProviderDrafts(buildProviderDrafts(data.providers || {}));
+      setLlmRouteDrafts(buildRouteDrafts(data.agent_routes || {}));
+    } catch (error) {
+      setLlmConfigError(error.message);
+    } finally {
+      setLlmConfigLoading(false);
+    }
+  }, [llmRouteDrafts]);
+
   const refreshIntraday = useCallback(async () => {
     setIntradayLoading(true);
     setIntradayError('');
@@ -295,6 +400,14 @@ function App() {
   useEffect(() => {
     refreshPremarketDebug().catch(() => {});
   }, [refreshPremarketDebug]);
+
+  useEffect(() => {
+    refreshOnePickDebug().catch(() => {});
+  }, [refreshOnePickDebug]);
+
+  useEffect(() => {
+    refreshLlmConfig().catch(() => {});
+  }, [refreshLlmConfig]);
 
   useEffect(() => {
     refreshIntraday().catch(() => {});
@@ -484,6 +597,20 @@ function App() {
               盘前调试
             </button>
             <button
+              className={activePage === 'one-pick-debug' ? 'active' : ''}
+              type="button"
+              onClick={() => setActivePage('one-pick-debug')}
+            >
+              单票策略
+            </button>
+            <button
+              className={activePage === 'llm-settings' ? 'active' : ''}
+              type="button"
+              onClick={() => setActivePage('llm-settings')}
+            >
+              模型配置
+            </button>
+            <button
               className={activePage === 'architecture' ? 'active' : ''}
               type="button"
               onClick={() => setActivePage('architecture')}
@@ -512,6 +639,29 @@ function App() {
           onSelectStep={setSelectedDebugStep}
           onRefresh={refreshPremarketDebug}
           onRun={() => executeJob('premarket')}
+        />
+      ) : activePage === 'one-pick-debug' ? (
+        <OnePickDebugPage
+          data={onePickDebug}
+          loading={onePickDebugLoading}
+          error={onePickDebugError}
+          rollbackTarget={onePickRollbackTarget}
+          onRollbackTargetChange={setOnePickRollbackTarget}
+          onRollback={rollbackOnePick}
+          onRefresh={refreshOnePickDebug}
+        />
+      ) : activePage === 'llm-settings' ? (
+        <LlmSettingsPage
+          data={llmConfig}
+          loading={llmConfigLoading}
+          error={llmConfigError}
+          providerDrafts={llmProviderDrafts}
+          routeDrafts={llmRouteDrafts}
+          onProviderDraftChange={setLlmProviderDrafts}
+          onRouteDraftChange={setLlmRouteDrafts}
+          onSaveProvider={saveLlmProvider}
+          onSaveRoute={saveLlmRoute}
+          onRefresh={refreshLlmConfig}
         />
       ) : (
         <>
@@ -854,6 +1004,429 @@ function PremarketDebugPage({
       </div>
     </section>
   );
+}
+
+function LlmSettingsPage({
+  data,
+  loading,
+  error,
+  providerDrafts,
+  routeDrafts,
+  onProviderDraftChange,
+  onRouteDraftChange,
+  onSaveProvider,
+  onSaveRoute,
+  onRefresh,
+}) {
+  const providers = data?.providers || {};
+  const routes = data?.agent_routes || {};
+  const usage = data?.usage || {};
+  const providerNames = Object.keys(providers);
+  const routeNames = Object.keys(routes);
+  return (
+    <section className="llm-settings-page">
+      <div className="one-pick-toolbar">
+        <div className="section-title">
+          <Terminal size={18} />
+          <span>模型密钥与 Agent 路由</span>
+        </div>
+        <button className="icon-button refresh-button" type="button" onClick={onRefresh} disabled={loading} aria-label="刷新模型配置">
+          <RefreshCw className={loading ? 'spin' : ''} size={16} />
+        </button>
+      </div>
+      {error ? <div className="market-error">{error}</div> : null}
+      <div className="llm-notice">
+        API Key 只写入本机 <code>data/config/llm_runtime.json</code>，页面只显示是否已配置和尾号预览，不回传完整密钥。
+      </div>
+      <div className="llm-layout">
+        <article className="llm-panel">
+          <h2>供应商密钥</h2>
+          <div className="llm-provider-list">
+            {providerNames.map((provider) => {
+              const current = providers[provider] || {};
+              const draft = providerDrafts[provider] || {};
+              return (
+                <div className="llm-provider-row" key={provider}>
+                  <div className="llm-row-heading">
+                    <strong>{formatProviderName(provider)}</strong>
+                    <span>{current.api_key_set ? `已配置 ${current.api_key_preview}` : '未配置密钥'}</span>
+                  </div>
+                  <label>
+                    <span>API Key</span>
+                    <input
+                      type="password"
+                      value={draft.api_key || ''}
+                      placeholder={current.api_key_set ? '留空则保留现有密钥' : '粘贴 API Key'}
+                      onChange={(event) => onProviderDraftChange((state) => ({
+                        ...state,
+                        [provider]: { ...(state[provider] || {}), api_key: event.target.value },
+                      }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Base URL</span>
+                    <input
+                      value={draft.base_url || ''}
+                      onChange={(event) => onProviderDraftChange((state) => ({
+                        ...state,
+                        [provider]: { ...(state[provider] || {}), base_url: event.target.value },
+                      }))}
+                    />
+                  </label>
+                  <label>
+                    <span>默认模型</span>
+                    <input
+                      value={draft.default_model || ''}
+                      onChange={(event) => onProviderDraftChange((state) => ({
+                        ...state,
+                        [provider]: { ...(state[provider] || {}), default_model: event.target.value },
+                      }))}
+                    />
+                  </label>
+                  <button className="toggle-button" type="button" onClick={() => onSaveProvider(provider)} disabled={loading}>
+                    保存供应商
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </article>
+        <article className="llm-panel">
+          <h2>Agent 使用哪个模型</h2>
+          <div className="llm-route-list">
+            {routeNames.map((agent) => {
+              const draft = routeDrafts[agent] || {};
+              return (
+                <div className="llm-route-row" key={agent}>
+                  <div className="llm-row-heading">
+                    <strong>{formatAgentName(agent)}</strong>
+                    <span>{draft.provider || '-'} / {draft.model || '-'}</span>
+                  </div>
+                  <div className="llm-route-grid">
+                    <label>
+                      <span>供应商</span>
+                      <select
+                        value={draft.provider || ''}
+                        onChange={(event) => onRouteDraftChange((state) => ({
+                          ...state,
+                          [agent]: { ...(state[agent] || {}), provider: event.target.value },
+                        }))}
+                      >
+                        {providerNames.map((provider) => <option key={provider} value={provider}>{formatProviderName(provider)}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span>模型</span>
+                      <input
+                        value={draft.model || ''}
+                        onChange={(event) => onRouteDraftChange((state) => ({
+                          ...state,
+                          [agent]: { ...(state[agent] || {}), model: event.target.value },
+                        }))}
+                      />
+                    </label>
+                    <label>
+                      <span>调用上限</span>
+                      <input
+                        type="number"
+                        value={draft.max_llm_calls ?? ''}
+                        onChange={(event) => onRouteDraftChange((state) => ({
+                          ...state,
+                          [agent]: { ...(state[agent] || {}), max_llm_calls: event.target.value },
+                        }))}
+                      />
+                    </label>
+                    <label>
+                      <span>Token 上限</span>
+                      <input
+                        type="number"
+                        value={draft.max_llm_tokens ?? ''}
+                        onChange={(event) => onRouteDraftChange((state) => ({
+                          ...state,
+                          [agent]: { ...(state[agent] || {}), max_llm_tokens: event.target.value },
+                        }))}
+                      />
+                    </label>
+                    <label>
+                      <span>成本上限</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={draft.max_llm_cost ?? ''}
+                        onChange={(event) => onRouteDraftChange((state) => ({
+                          ...state,
+                          [agent]: { ...(state[agent] || {}), max_llm_cost: event.target.value },
+                        }))}
+                      />
+                    </label>
+                  </div>
+                  <button className="toggle-button" type="button" onClick={() => onSaveRoute(agent)} disabled={loading}>
+                    保存 Agent 路由
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </article>
+      </div>
+      <article className="llm-panel llm-usage-panel">
+        <h2>已消耗情况</h2>
+        <div className="one-pick-summary">
+          <div>
+            <span>总调用</span>
+            <strong>{usage.total?.calls ?? 0}</strong>
+          </div>
+          <div>
+            <span>总 Token</span>
+            <strong>{usage.total?.tokens ?? 0}</strong>
+          </div>
+          <div>
+            <span>估算成本</span>
+            <strong>{formatCost(usage.total?.cost)}</strong>
+          </div>
+          <div>
+            <span>最近记录</span>
+            <strong>{usage.recent?.length ?? 0}</strong>
+          </div>
+        </div>
+        <ul className="trace-list">
+          {(usage.recent || []).length === 0 ? <li>暂无模型调用记录</li> : usage.recent.map((item, index) => (
+            <li key={`${item.ts || 'usage'}-${index}`}>
+              <strong>{formatAgentName(item.agent)}</strong>
+              <span>{formatProviderName(item.provider)} / {item.tokens || 0} Token / {formatCost(item.cost)}</span>
+            </li>
+          ))}
+        </ul>
+      </article>
+    </section>
+  );
+}
+
+function OnePickDebugPage({
+  data,
+  loading,
+  error,
+  rollbackTarget,
+  onRollbackTargetChange,
+  onRollback,
+  onRefresh,
+}) {
+  const selected = data?.selected_stock || {};
+  const plan = data?.trade_plan || {};
+  const outcome = data?.outcome || {};
+  const checkpoints = data?.checkpoint_timeline || data?.checkpoints || [];
+  const budgetEntries = Object.entries(data?.budget_usage || {});
+  const learning = data?.learning_state || {};
+  const learningUpdate = data?.learning_update || {};
+  const buyReasons = plan.buy_reasons || plan.reasons || [];
+  const riskReasons = plan.risk_reasons || plan.risks || [];
+  const statusText = data?.status === 'ok' ? '有数据' : '暂无数据';
+  return (
+    <section className="one-pick-debug-page">
+      <div className="one-pick-toolbar">
+        <div className="section-title">
+          <Activity size={18} />
+          <span>单票策略调试面板</span>
+        </div>
+        <div className="one-pick-actions">
+          <span className={`result-badge ${data?.status === 'ok' ? 'success' : 'failed'}`}>{statusText}</span>
+          <button className="icon-button refresh-button" type="button" onClick={onRefresh} disabled={loading} aria-label="刷新单票策略调试数据">
+            <RefreshCw className={loading ? 'spin' : ''} size={16} />
+          </button>
+        </div>
+      </div>
+      {error ? <div className="market-error">{error}</div> : null}
+      <div className="one-pick-summary">
+        <div>
+          <span>运行编号</span>
+          <strong>{data?.run_id || '-'}</strong>
+        </div>
+        <div>
+          <span>入选股票</span>
+          <strong>{selected.symbol || selected.selected_symbol || '-'}</strong>
+        </div>
+        <div>
+          <span>置信度</span>
+          <strong>{formatPercentValue(selected.confidence ?? plan.confidence)}</strong>
+        </div>
+        <div>
+          <span>风险收益比</span>
+          <strong>{formatPlain(selected.risk_reward_ratio ?? plan.risk_reward_ratio)}</strong>
+        </div>
+      </div>
+      <div className="one-pick-grid">
+        <article className="one-pick-card">
+          <h2>交易计划</h2>
+          <div className="context-strip">
+            <span>入场 {formatPrice(plan.entry_price ?? plan.entry?.price)}</span>
+            <span>出场 {formatPrice(plan.exit_price ?? plan.exit?.price)}</span>
+            <span>收益 {formatPercentValue(outcome.pnl_pct)}</span>
+          </div>
+          <ul className="trace-list">
+            {buyReasons.length === 0 ? <li>暂无买入理由</li> : buyReasons.slice(0, 4).map((reason, index) => (
+              <li key={`buy-${index}`}>
+                <strong>买入</strong>
+                <span>{formatOnePickReason(reason)}</span>
+              </li>
+            ))}
+            {riskReasons.slice(0, 4).map((reason, index) => (
+              <li key={`risk-${index}`}>
+                <strong>风险</strong>
+                <span>{formatOnePickReason(reason)}</span>
+              </li>
+            ))}
+          </ul>
+        </article>
+        <article className="one-pick-card">
+          <h2>检查点时间线</h2>
+          <ul className="trace-list">
+            {checkpoints.length === 0 ? <li>暂无检查点</li> : checkpoints.slice(-8).map((checkpoint, index) => (
+              <li key={checkpoint.checkpoint_id || `${checkpoint.step}-${index}`}>
+                <strong className={`trace-${checkpoint.status}`}>{formatOnePickStep(checkpoint.step)}</strong>
+                <span>{formatOnePickStatus(checkpoint.status)} / {formatDateTime(checkpoint.updated_at || checkpoint.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        </article>
+        <article className="one-pick-card">
+          <h2>预算使用</h2>
+          <div className="metric-mini-grid">
+            {budgetEntries.length === 0 ? (
+              <div>
+                <span>预算</span>
+                <strong>-</strong>
+              </div>
+            ) : budgetEntries.slice(0, 4).map(([name, value]) => (
+              <div key={name}>
+                <span>{formatOnePickBudgetName(name)}</span>
+                <strong>{formatPlain(value)}</strong>
+              </div>
+            ))}
+          </div>
+        </article>
+        <article className="one-pick-card">
+          <h2>学习状态</h2>
+          <div className="context-strip">
+            <span>当前版本 {learning.current_version || '-'}</span>
+            <span>{learning.version_count || 0} 个版本</span>
+          </div>
+          <pre className="one-pick-json">{JSON.stringify(learningUpdate || {}, null, 2)}</pre>
+          <div className="rollback-row">
+            <input
+              value={rollbackTarget}
+              onChange={(event) => onRollbackTargetChange(event.target.value)}
+              placeholder="回滚目标版本"
+            />
+            <button className="toggle-button" type="button" onClick={onRollback} disabled={loading || !rollbackTarget.trim()}>
+              回滚
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function formatOnePickStep(step) {
+  return {
+    premarket_intel_collected: '盘前情报收集',
+    candidates_generated: '候选生成',
+    stock_selected: '单票选择',
+    trade_plan_created: '交易计划生成',
+    buy_order_submitted: '买入提交',
+    buy_filled: '买入成交',
+    next_day_exit_planned: '次日退出计划',
+    sell_order_submitted: '卖出提交',
+    sell_filled: '卖出成交',
+    outcome_reviewed: '结果复盘',
+    learning_state_updated: '学习状态更新',
+  }[step] || step || '-';
+}
+
+function formatOnePickStatus(status) {
+  return {
+    ok: '有数据',
+    empty: '暂无数据',
+    success: '成功',
+    failed: '失败',
+    skipped: '已跳过',
+    pending: '等待中',
+    running: '运行中',
+    invalidated: '已失效',
+  }[status] || status || '-';
+}
+
+function formatOnePickBudgetName(name) {
+  return {
+    spent_llm_calls: '已用模型调用',
+    spent_llm_tokens: '已用模型 Token',
+    spent_llm_cost: '已用模型成本',
+    spent_tool_calls: '已用工具调用',
+    remaining_llm_calls: '剩余模型调用',
+    remaining_llm_tokens: '剩余模型 Token',
+    remaining_llm_cost: '剩余模型成本',
+    remaining_tool_calls: '剩余工具调用',
+  }[name] || name;
+}
+
+function formatOnePickReason(reason) {
+  if (typeof reason !== 'string') return reason;
+  return reason
+    .replace('ranked_score=', '排名分=')
+    .replace('strategy_tags=', '策略标签=')
+    .replace('semiconductor', '半导体');
+}
+
+function buildProviderDrafts(providers) {
+  return Object.fromEntries(Object.entries(providers).map(([provider, value]) => [
+    provider,
+    {
+      api_key: '',
+      base_url: value.base_url || '',
+      default_model: value.default_model || '',
+    },
+  ]));
+}
+
+function buildRouteDrafts(routes) {
+  return Object.fromEntries(Object.entries(routes).map(([agent, value]) => [
+    agent,
+    {
+      provider: value.provider || 'openai',
+      model: value.model || '',
+      max_llm_calls: value.budget?.max_llm_calls ?? '',
+      max_llm_tokens: value.budget?.max_llm_tokens ?? '',
+      max_llm_cost: value.budget?.max_llm_cost ?? '',
+    },
+  ]));
+}
+
+function nullableNumber(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function formatProviderName(provider) {
+  return {
+    openai: 'OpenAI',
+    deepseek: 'DeepSeek',
+    qwen: '通义千问',
+  }[provider] || provider || '-';
+}
+
+function formatAgentName(agent) {
+  return {
+    premarket_agent: '盘前情报 Agent',
+    one_pick_agent: '单票策略 Agent',
+    intraday_agent: '盘中扫描 Agent',
+    review_agent: '盘后复盘 Agent',
+  }[agent] || agent || '-';
+}
+
+function formatCost(value) {
+  if (value === null || value === undefined || value === '') return '-';
+  return `$${Number(value).toFixed(4)}`;
 }
 
 function TradingPipelineSection({
