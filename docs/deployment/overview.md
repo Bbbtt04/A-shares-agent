@@ -95,6 +95,8 @@ Required runtime configuration:
 | `CORS_ORIGINS` | Recommended | Web domain when direct API access is used |
 | `CORS_ORIGIN_REGEX` | Optional | Tighten or widen allowed origins |
 | `PYTHONIOENCODING` | Recommended | Already set to `utf-8` in Dockerfile |
+| `RUN_JOB_TIMEOUT_SECONDS` | Optional | Fallback timeout for API-triggered jobs, default `60` |
+| `PREMARKET_JOB_TIMEOUT_SECONDS` | Optional | Premarket agent timeout override, default `300` |
 
 Health check:
 

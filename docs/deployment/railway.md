@@ -90,9 +90,13 @@ Optional API variables:
 ```text
 CORS_ORIGIN_REGEX=
 PYTHONIOENCODING=utf-8
+RUN_JOB_TIMEOUT_SECONDS=60
+PREMARKET_JOB_TIMEOUT_SECONDS=300
 ```
 
-`PYTHONIOENCODING` is already set by the Dockerfile.
+`PYTHONIOENCODING` is already set by the Dockerfile. `RUN_JOB_TIMEOUT_SECONDS`
+sets the fallback timeout for API-triggered jobs, while
+`PREMARKET_JOB_TIMEOUT_SECONDS` overrides the premarket agent specifically.
 
 ## Persistent Volumes
 

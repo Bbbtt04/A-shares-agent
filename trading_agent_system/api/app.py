@@ -51,6 +51,11 @@ PREMARKET_LEARNING_DIR = ROOT / "data" / "premarket_learning"
 DAILY_STRATEGY_DB = ROOT / "data" / "daily_strategy.sqlite"
 LLM_RUNTIME_CONFIG = ROOT / "data" / "config" / "llm_runtime.json"
 DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+DEFAULT_JOB_TIMEOUT_SECONDS = 60
+JOB_TIMEOUT_SECONDS = {
+    "premarket": 300,
+    "review": 120,
+}
 
 
 def _env_list(name: str) -> list[str]:
@@ -722,18 +727,36 @@ def _run_job(job: str, report_date: Date) -> RunResult:
         raise HTTPException(status_code=404, detail=f"unknown job: {job}")
     label, args = JOBS[job]
     command = [sys.executable, *[item.format(date=report_date.isoformat()) for item in args]]
+    timeout_seconds = _job_timeout_seconds(job)
     started = time.perf_counter()
-    completed = subprocess.run(
-        command,
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-        timeout=30,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        stdout = _subprocess_output_to_text(getattr(error, "stdout", None) or getattr(error, "output", None))
+        stderr = _subprocess_output_to_text(getattr(error, "stderr", None))
+        timeout_message = f"Command timed out after {timeout_seconds} seconds"
+        return RunResult(
+            job=job,
+            label=label,
+            command=command,
+            status="failed",
+            returncode=-1,
+            elapsed_ms=elapsed_ms,
+            stdout=stdout,
+            stderr=f"{timeout_message}\n{stderr}".strip(),
+            parsed=_parse_stdout(stdout),
+        )
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     return RunResult(
         job=job,
@@ -746,6 +769,27 @@ def _run_job(job: str, report_date: Date) -> RunResult:
         stderr=completed.stderr,
         parsed=_parse_stdout(completed.stdout),
     )
+
+
+def _job_timeout_seconds(job: str) -> int:
+    specific = os.getenv(f"{job.upper()}_JOB_TIMEOUT_SECONDS")
+    configured = specific or os.getenv("RUN_JOB_TIMEOUT_SECONDS")
+    if configured:
+        try:
+            timeout_seconds = int(configured)
+        except ValueError:
+            timeout_seconds = 0
+        if timeout_seconds > 0:
+            return timeout_seconds
+    return JOB_TIMEOUT_SECONDS.get(job, DEFAULT_JOB_TIMEOUT_SECONDS)
+
+
+def _subprocess_output_to_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
 
 
 def _parse_stdout(stdout: str) -> object | None:
