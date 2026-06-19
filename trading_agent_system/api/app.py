@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import asdict, is_dataclass
 from datetime import date as Date
 from pathlib import Path
 from typing import Any, Literal
@@ -15,6 +16,13 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from trading_agent_system.core.config import load_yaml_config
+from trading_agent_system.agents.premarket_agent.factor_learning import (
+    PremarketFactorLearningAgent,
+    PremarketFactorLearningState,
+    PremarketFactorLearningStore,
+)
+from trading_agent_system.agents.premarket_agent.factor_scoring import PremarketFactorScoreSet
+from trading_agent_system.agents.premarket_agent.outcome_evaluator import PremarketSignalOutcomeEvaluator
 from trading_agent_system.core.knowledge import KnowledgeStore, RagRetriever
 from trading_agent_system.core.market_data import (
     EastMoneyMarketDataProvider,
@@ -24,6 +32,7 @@ from trading_agent_system.core.market_data import (
 from trading_agent_system.core.observability import MetricsRecorder, TraceLogger
 from trading_agent_system.core.premarket import PremarketContextLoader
 from trading_agent_system.core.storage import JsonlEventRepository
+from trading_agent_system.core.strategy_ledger import StrategyLedgerStore
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +47,8 @@ KNOWLEDGE_PATH = ROOT / "data" / "knowledge.sqlite"
 A_STOCK_DATA_SOURCE = "a-stock-data/premarket"
 ONE_PICK_CHECKPOINT_DIR = ROOT / "data" / "runtime" / "checkpoints"
 ONE_PICK_LEARNING_DIR = ROOT / "data" / "strategy_learning"
+PREMARKET_LEARNING_DIR = ROOT / "data" / "premarket_learning"
+DAILY_STRATEGY_DB = ROOT / "data" / "daily_strategy.sqlite"
 LLM_RUNTIME_CONFIG = ROOT / "data" / "config" / "llm_runtime.json"
 DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
@@ -83,6 +94,10 @@ class QuoteRequest(BaseModel):
 
 
 class OnePickRollbackRequest(BaseModel):
+    target_version: str
+
+
+class PremarketFactorLearningRollbackRequest(BaseModel):
     target_version: str
 
 
@@ -285,6 +300,93 @@ def premarket_rag_latest() -> dict[str, object]:
     return {
         "evidence": _latest_event_payload(repository, "premarket.rag_evidence_packs"),
         "evaluation": _latest_event_payload(repository, "premarket.rag_evaluation"),
+    }
+
+
+@app.get("/api/premarket/recommendations/latest")
+def premarket_recommendations_latest() -> dict[str, object]:
+    repository = JsonlEventRepository(EVENT_DIR)
+    recommendations = _latest_event_payload(repository, "premarket.strategy_recommendations")
+    return {
+        "status": "ok" if recommendations else "empty",
+        "semantic_reviews": _latest_event_payload(repository, "premarket.semantic_reviews"),
+        "factor_scores": _latest_event_payload(repository, "premarket.factor_scores"),
+        "recommendations": recommendations,
+    }
+
+
+@app.get("/api/daily-strategy/latest")
+def daily_strategy_latest() -> dict[str, object]:
+    store = StrategyLedgerStore(DAILY_STRATEGY_DB)
+    try:
+        recommendation = store.recommendations.latest()
+        outcome = store.outcomes.latest()
+        active_weight = store.weights.active()
+    finally:
+        store.close()
+    return {
+        "status": "ok" if recommendation else "empty",
+        "recommendation": recommendation,
+        "latest_outcome": outcome,
+        "active_weight_version": active_weight,
+    }
+
+
+@app.get("/api/daily-strategy/audit/{run_id}")
+def daily_strategy_audit(run_id: str) -> dict[str, object]:
+    store = StrategyLedgerStore(DAILY_STRATEGY_DB)
+    try:
+        timeline = store.audits.by_run(run_id)
+    finally:
+        store.close()
+    return {"run_id": run_id, "timeline": timeline}
+
+
+@app.get("/api/premarket/factor-learning/state")
+def premarket_factor_learning_state() -> dict[str, object]:
+    store = PremarketFactorLearningStore(PREMARKET_LEARNING_DIR)
+    current = store.get_current()
+    return {
+        "learning_state": _plain_data(current) if current else None,
+        "versions": store.list_versions(),
+        "path": str(PREMARKET_LEARNING_DIR),
+    }
+
+
+@app.post("/api/premarket/factor-learning/rollback")
+def premarket_factor_learning_rollback(request: PremarketFactorLearningRollbackRequest | dict[str, object]) -> dict[str, object]:
+    target_version = request.target_version if isinstance(request, PremarketFactorLearningRollbackRequest) else request.get("target_version")
+    if not target_version:
+        raise HTTPException(status_code=400, detail="target_version is required")
+    try:
+        state = PremarketFactorLearningStore(PREMARKET_LEARNING_DIR).rollback_current(str(target_version))
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return {"learning_state": _plain_data(state)}
+
+
+@app.post("/api/premarket/factor-learning/evaluate")
+def premarket_factor_learning_evaluate(request: dict[str, object]) -> dict[str, object]:
+    if not isinstance(request.get("score_set"), dict):
+        raise HTTPException(status_code=400, detail="score_set is required")
+    if not isinstance(request.get("market_results"), dict):
+        raise HTTPException(status_code=400, detail="market_results is required")
+    score_set = PremarketFactorScoreSet.model_validate(request["score_set"])
+    evaluation_date = Date.fromisoformat(str(request["evaluation_date"])) if request.get("evaluation_date") else None
+    outcome_set = PremarketSignalOutcomeEvaluator().evaluate(
+        score_set,
+        request["market_results"],  # type: ignore[arg-type]
+        index_return=float(request.get("index_return") or 0.0),
+        evaluation_date=evaluation_date,
+    )
+    store = PremarketFactorLearningStore(PREMARKET_LEARNING_DIR)
+    current_state = store.get_current() or PremarketFactorLearningState(version="pfl_initial")
+    update = PremarketFactorLearningAgent().update(current_state, outcome_set)
+    store.save_version(update.next_state)
+    return {
+        "outcome_set": _plain_data(outcome_set),
+        "learning_update": _plain_data(update),
+        "learning_state": _plain_data(update.next_state),
     }
 
 
@@ -981,6 +1083,16 @@ def _read_jsonl_file(path: Path) -> list[dict[str, Any]]:
             if isinstance(data, dict):
                 rows.append(data)
     return rows
+
+
+def _plain_data(value: object) -> object:
+    if value is None:
+        return None
+    if is_dataclass(value):
+        return asdict(value)
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")  # type: ignore[attr-defined]
+    return value
 
 
 def _latest_run_id(checkpoints: list[dict[str, Any]]) -> str | None:

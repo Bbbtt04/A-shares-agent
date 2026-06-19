@@ -1,5 +1,7 @@
 .venv/
 .agents/
+.codex-run/
+.tmp/
 logs/
 __pycache__/
 *.py[cod]

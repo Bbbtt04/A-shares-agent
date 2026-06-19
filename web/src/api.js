@@ -53,6 +53,14 @@ export function fetchPremarketRagLatest() {
   return request('/api/premarket/rag/latest');
 }
 
+export function fetchDailyStrategyLatest() {
+  return request('/api/daily-strategy/latest');
+}
+
+export function fetchDailyStrategyAudit(runId) {
+  return request(`/api/daily-strategy/audit/${encodeURIComponent(runId)}`);
+}
+
 export function fetchPremarketDebug({ tradingDay, q = '盘前', limit = 200 } = {}) {
   const params = new URLSearchParams({
     q,

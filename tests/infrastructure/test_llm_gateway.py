@@ -7,12 +7,14 @@ from trading_agent_system.core.llm_gateway import (
     LLMGateway,
     MockModelClient,
     ModelMessage,
+    ModelRequest,
     ModelResponse,
     PromptTemplateRegistry,
     StructuredOutputValidationError,
     StructuredOutputValidator,
     TokenUsage,
 )
+from trading_agent_system.core.llm_gateway.clients import OpenAICompatibleClient
 
 
 def test_prompt_template_renders_required_variables() -> None:
@@ -138,3 +140,38 @@ def test_gateway_caches_requests_and_records_estimated_cost(tmp_path) -> None:
     assert second.cache_hit is True
     assert first.usage.estimated_cost == pytest.approx(0.0002)
     assert audit.records[-1]["payload"]["cache_hit"] is True
+
+
+def test_openai_compatible_client_posts_chat_completion_payload() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_transport(url: str, headers: dict[str, str], payload: dict[str, object], timeout: float) -> dict[str, object]:
+        captured.update({"url": url, "headers": headers, "payload": payload, "timeout": timeout})
+        return {
+            "choices": [{"message": {"content": "{\"ok\": true}"}}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
+            "model": "deepseek-chat",
+        }
+
+    client = OpenAICompatibleClient(
+        provider_name="deepseek",
+        api_key="sk-test",
+        base_url="https://api.deepseek.com",
+        default_model="deepseek-chat",
+        transport=fake_transport,
+    )
+
+    response = client.complete(
+        ModelRequest(
+            messages=[ModelMessage(role="user", content="Return JSON")],
+            temperature=0,
+            response_schema={"type": "object"},
+        )
+    )
+
+    assert captured["url"] == "https://api.deepseek.com/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer sk-test"
+    assert captured["payload"]["model"] == "deepseek-chat"
+    assert captured["payload"]["messages"] == [{"role": "user", "content": "Return JSON"}]
+    assert response.content == "{\"ok\": true}"
+    assert response.usage.total_tokens == 7

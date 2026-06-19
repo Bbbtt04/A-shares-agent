@@ -2512,6 +2512,72 @@ kbd {
   animation: spin 0.9s linear infinite;
 }
 
+.daily-strategy-page {
+  display: grid;
+  gap: 16px;
+}
+
+.daily-strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.daily-strategy-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.daily-strategy-hero strong {
+  color: #111111;
+  font-size: 20px;
+}
+
+.daily-strategy-hero span {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #F0F0F0;
+  color: #111111;
+  font-weight: 700;
+}
+
+.daily-list-block {
+  margin-top: 12px;
+}
+
+.daily-list-block strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.daily-list-block ul,
+.daily-factor-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.daily-list-block li,
+.daily-factor-list li {
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 1px solid #F0F0F0;
+  border-radius: 6px;
+  background: #FAFAFA;
+}
+
+.daily-factor-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -2613,6 +2679,7 @@ kbd {
 
   .premarket-summary,
   .premarket-recommendation-grid,
+  .daily-strategy-grid,
   .premarket-layout {
     grid-template-columns: 1fr;
   }

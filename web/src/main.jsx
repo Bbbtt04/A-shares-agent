@@ -31,6 +31,7 @@ import {
   fetchIntradayLatest,
   fetchLlmConfig,
   fetchMarketQuotes,
+  fetchDailyStrategyLatest,
   fetchOnePickLatest,
   fetchPremarketContext,
   fetchPremarketDebug,
@@ -69,6 +70,18 @@ const A_STOCK_DATA_CATEGORY_LABELS = {
   announcement: '公告',
   quote_candidate: '盘前观察候选',
 };
+const STOCK_NAME_MAP = {
+  '600519.SH': '贵州茅台',
+  '000858.SZ': '五粮液',
+  '600887.SH': '伊利股份',
+  '688256.SH': '寒武纪',
+  '601138.SH': '工业富联',
+  '688981.SH': '中芯国际',
+  '300308.SZ': '中际旭创',
+  '002594.SZ': '比亚迪',
+  '300750.SZ': '宁德时代',
+  '300274.SZ': '阳光电源',
+};
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -76,16 +89,16 @@ function todayIso() {
 
 function pageEyebrow(activePage) {
   return {
-    console: 'Paper Trading',
-    'premarket-debug': 'Premarket Debug',
-    'one-pick-debug': '单票策略调试',
+    console: '模拟交易',
+    'premarket-debug': '盘前调试',
+    'one-pick-debug': '单票策略',
     'llm-settings': '模型配置',
-    architecture: 'Architecture Map',
-  }[activePage] || 'Paper Trading';
+    architecture: '架构说明',
+  }[activePage] || '模拟交易';
 }
 
 function pageTitle(activePage) {
-  if (activePage === 'one-pick-debug') return '单票两日策略调试';
+  if (activePage === 'one-pick-debug') return '单票策略与每日闭环';
   if (activePage === 'llm-settings') return 'Agent 模型与密钥配置';
   return {
     console: 'A股 Agent 控制台',
@@ -134,6 +147,9 @@ function App() {
   const [premarketDebugQuery, setPremarketDebugQuery] = useState('机器人');
   const [selectedDebugStep, setSelectedDebugStep] = useState('raw_documents');
   const [onePickDebug, setOnePickDebug] = useState(null);
+  const [dailyStrategy, setDailyStrategy] = useState(null);
+  const [dailyStrategyLoading, setDailyStrategyLoading] = useState(false);
+  const [dailyStrategyError, setDailyStrategyError] = useState('');
   const [onePickDebugLoading, setOnePickDebugLoading] = useState(false);
   const [onePickDebugError, setOnePickDebugError] = useState('');
   const [onePickRollbackTarget, setOnePickRollbackTarget] = useState('');
@@ -249,6 +265,19 @@ function App() {
       setOnePickDebugError(error.message);
     } finally {
       setOnePickDebugLoading(false);
+    }
+  }, []);
+
+  const refreshDailyStrategy = useCallback(async () => {
+    setDailyStrategyLoading(true);
+    setDailyStrategyError('');
+    try {
+      const data = await fetchDailyStrategyLatest();
+      setDailyStrategy(data);
+    } catch (error) {
+      setDailyStrategyError(error.message);
+    } finally {
+      setDailyStrategyLoading(false);
     }
   }, []);
 
@@ -404,6 +433,10 @@ function App() {
   useEffect(() => {
     refreshOnePickDebug().catch(() => {});
   }, [refreshOnePickDebug]);
+
+  useEffect(() => {
+    refreshDailyStrategy().catch(() => {});
+  }, [refreshDailyStrategy]);
 
   useEffect(() => {
     refreshLlmConfig().catch(() => {});
@@ -643,12 +676,16 @@ function App() {
       ) : activePage === 'one-pick-debug' ? (
         <OnePickDebugPage
           data={onePickDebug}
+          dailyStrategy={dailyStrategy}
+          dailyStrategyLoading={dailyStrategyLoading}
+          dailyStrategyError={dailyStrategyError}
           loading={onePickDebugLoading}
           error={onePickDebugError}
           rollbackTarget={onePickRollbackTarget}
           onRollbackTargetChange={setOnePickRollbackTarget}
           onRollback={rollbackOnePick}
           onRefresh={refreshOnePickDebug}
+          onDailyRefresh={refreshDailyStrategy}
         />
       ) : activePage === 'llm-settings' ? (
         <LlmSettingsPage
@@ -1006,6 +1043,105 @@ function PremarketDebugPage({
   );
 }
 
+function DailyStrategyPage({ data, loading, error, onRefresh }) {
+  const recommendation = data?.recommendation || {};
+  const outcome = data?.latest_outcome || {};
+  const activeWeight = data?.active_weight_version || {};
+  const contributions = recommendation.handoff_payload?.factor_contributions
+    || recommendation.handoff_payload?.factor_scores
+    || {};
+  return (
+    <section className="daily-strategy-page">
+      <div className="premarket-debug-toolbar">
+        <div>
+          <p className="eyebrow">每日策略</p>
+          <h2>数据库策略闭环</h2>
+        </div>
+        <button className="icon-button" type="button" onClick={onRefresh} title="刷新">
+          <RefreshCw size={16} />
+        </button>
+      </div>
+      {error ? <div className="error-banner">{error}</div> : null}
+      {loading ? <div className="loading">正在加载每日策略...</div> : null}
+      <div className="daily-strategy-grid">
+        <article className="debug-side-card">
+          <h2>今日推荐</h2>
+          <div className="daily-strategy-hero">
+            <strong>{formatStockDisplay(recommendation)}</strong>
+            <span>{formatStrategyAction(recommendation.action || data?.status || 'empty')}</span>
+          </div>
+          <div className="context-strip">
+            <span>分数 {formatScore(recommendation.signal_score)}</span>
+            <span>置信度 {formatPercentNumber(recommendation.confidence)}</span>
+            <span>风险收益比 {recommendation.expected_risk_reward ?? '-'}</span>
+          </div>
+          <DailyList title="入场条件" items={recommendation.entry_conditions} />
+          <DailyList title="放弃条件" items={recommendation.avoid_conditions} />
+          <DailyList title="风险提示" items={recommendation.risk_notes} />
+        </article>
+        <article className="debug-side-card">
+          <h2>结算结果</h2>
+          <div className="daily-strategy-hero">
+            <strong>{formatStockDisplay(outcome)}</strong>
+            <span>{formatStrategyAction(outcome.hit_result || '-')}</span>
+          </div>
+          <div className="context-strip">
+            <span>买入价 {formatPrice(outcome.buy_price)}</span>
+            <span>卖出价 {formatPrice(outcome.sell_price)}</span>
+            <span>收益率 {formatPercentNumber(outcome.return_pct)}</span>
+          </div>
+          <KeyValueList data={outcome.attribution || {}} emptyText="暂无归因数据" />
+        </article>
+        <article className="debug-side-card">
+          <h2>权重版本</h2>
+          <div className="daily-strategy-hero">
+            <strong>{activeWeight.version || '-'}</strong>
+            <span>{activeWeight.previous_version || '当前生效'}</span>
+          </div>
+          <KeyValueList data={activeWeight.weights || {}} emptyText="暂无权重数据" />
+        </article>
+        <article className="debug-side-card">
+          <h2>因子贡献</h2>
+          <ul className="daily-factor-list">
+            {Object.entries(contributions).length === 0 ? <li>暂无因子数据</li> : Object.entries(contributions).map(([name, value]) => (
+              <li key={name}>
+                <span>{name}</span>
+                <strong>{typeof value === 'number' ? value.toFixed(3) : String(value)}</strong>
+              </li>
+            ))}
+          </ul>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function DailyList({ title, items }) {
+  const values = Array.isArray(items) ? items : [];
+  return (
+    <div className="daily-list-block">
+      <strong>{title}</strong>
+      <ul>
+        {values.length === 0 ? <li>-</li> : values.map((item, index) => <li key={`${title}-${index}`}>{formatStrategyText(item)}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+function KeyValueList({ data, emptyText }) {
+  const entries = Object.entries(data || {});
+  return (
+    <ul className="daily-factor-list">
+      {entries.length === 0 ? <li>{emptyText}</li> : entries.slice(0, 8).map(([key, value]) => (
+        <li key={key}>
+          <span>{formatDisplayKey(key)}</span>
+          <strong>{formatDisplayValue(value)}</strong>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function LlmSettingsPage({
   data,
   loading,
@@ -1204,12 +1340,16 @@ function LlmSettingsPage({
 
 function OnePickDebugPage({
   data,
+  dailyStrategy,
+  dailyStrategyLoading,
+  dailyStrategyError,
   loading,
   error,
   rollbackTarget,
   onRollbackTargetChange,
   onRollback,
   onRefresh,
+  onDailyRefresh,
 }) {
   const selected = data?.selected_stock || {};
   const plan = data?.trade_plan || {};
@@ -1223,6 +1363,12 @@ function OnePickDebugPage({
   const statusText = data?.status === 'ok' ? '有数据' : '暂无数据';
   return (
     <section className="one-pick-debug-page">
+      <DailyStrategyPage
+        data={dailyStrategy}
+        loading={dailyStrategyLoading}
+        error={dailyStrategyError}
+        onRefresh={onDailyRefresh}
+      />
       <div className="one-pick-toolbar">
         <div className="section-title">
           <Activity size={18} />
@@ -1310,7 +1456,7 @@ function OnePickDebugPage({
             <span>当前版本 {learning.current_version || '-'}</span>
             <span>{learning.version_count || 0} 个版本</span>
           </div>
-          <pre className="one-pick-json">{JSON.stringify(learningUpdate || {}, null, 2)}</pre>
+          <KeyValueList data={learningUpdate || {}} emptyText="暂无学习更新" />
           <div className="rollback-row">
             <input
               value={rollbackTarget}
@@ -2325,6 +2471,88 @@ function formatPercentNumber(value) {
 function formatPlain(value) {
   if (value === null || value === undefined) return '-';
   return Number(value).toFixed(2);
+}
+
+function formatDisplayKey(key) {
+  return {
+    action: '动作',
+    factor_scores: '因子分',
+    risk_flags: '风险标记',
+    previous_version: '上一版本',
+    next_state: '下一状态',
+    weight_deltas: '权重变化',
+    risk_penalty_deltas: '风险惩罚变化',
+    outcome_count: '样本数量',
+    sample_count: '累计样本',
+    catalyst_strength: '催化强度',
+    source_quality: '来源质量',
+    company_fit: '公司匹配度',
+    evidence_consistency: '证据一致性',
+    event_novelty: '事件新鲜度',
+    theme_heat: '题材热度',
+    market_confirmation: '市场确认',
+    crowding_risk: '拥挤风险',
+    stale_news_risk: '旧闻风险',
+    hype_risk: '炒作风险',
+  }[key] || key;
+}
+
+function formatDisplayValue(value) {
+  if (value === null || value === undefined || value === '') return '-';
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(3);
+  if (typeof value === 'boolean') return value ? '是' : '否';
+  if (Array.isArray(value)) return value.length > 0 ? value.map((item) => formatDisplayValue(item)).join('、') : '-';
+  if (typeof value === 'object') {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return '-';
+    return entries.slice(0, 3).map(([key, item]) => `${formatDisplayKey(key)}=${formatDisplayValue(item)}`).join('；');
+  }
+  return String(value);
+}
+
+function formatStrategyAction(value) {
+  return {
+    buy: '买入',
+    candidate: '候选',
+    watch: '观察',
+    avoid: '回避',
+    no_trade: '不交易',
+    empty: '暂无数据',
+    ok: '正常',
+    success: '成功',
+    failed: '失败',
+    skipped: '已跳过',
+    pending_price: '等待价格',
+    invalid_price: '价格无效',
+    win: '盈利',
+    loss: '亏损',
+    flat: '持平',
+    '-': '-',
+  }[value] || String(value || '-');
+}
+
+function formatStrategyText(value) {
+  const text = String(value || '');
+  const aligned = text.match(/^(.+?) remains aligned with (.+)$/);
+  if (aligned) return `${formatStockName(aligned[1])} 仍与${aligned[2]}主题保持一致`;
+  return {
+    'Opening confirmation supports the premarket factor signal': '开盘确认支持盘前因子信号',
+    'No new avoid condition appears before handoff': '移交前未出现新的放弃条件',
+    'Semantic review or fresh evidence rejects the catalyst': '语义评审或新增证据否定催化逻辑',
+    'Opening confirmation fails or reverses the theme signal': '开盘确认失败或题材信号反转',
+    'No actionable premarket recommendation was produced.': '没有产生可执行的盘前推荐',
+    'pipeline returned no recommendations': '流水线没有返回推荐标的',
+  }[text] || text;
+}
+
+function formatStockDisplay(item) {
+  if (!item || typeof item !== 'object') return '-';
+  return item.name || item.stock_name || item.company_name || formatStockName(item.symbol);
+}
+
+function formatStockName(symbol) {
+  if (!symbol) return '-';
+  return STOCK_NAME_MAP[String(symbol)] || String(symbol);
 }
 
 function formatScore(value) {
