@@ -85,3 +85,28 @@ def test_daily_strategy_audit_returns_run_timeline(tmp_path, monkeypatch) -> Non
     assert response["run_id"] == "run_today"
     assert response["timeline"][0]["stage"] == "factor_scoring"
     assert response["timeline"][0]["output"]["scores"] == 1
+
+
+def test_run_all_includes_daily_strategy_jobs(monkeypatch) -> None:
+    called: list[str] = []
+
+    def fake_run_job(job: str, report_date: date) -> api_module.RunResult:
+        called.append(job)
+        return api_module.RunResult(
+            job=job,
+            label=job,
+            command=["python", job],
+            status="success",
+            returncode=0,
+            elapsed_ms=1,
+            stdout="{}",
+            stderr="",
+            parsed={},
+        )
+
+    monkeypatch.setattr(api_module, "_run_job", fake_run_job)
+
+    response = api_module.run_all(api_module.RunRequest(date=date(2026, 6, 19)))
+
+    assert response.status == "success"
+    assert called[:3] == ["premarket", "daily_strategy_recommendation", "daily_strategy_settlement"]

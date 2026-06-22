@@ -122,6 +122,14 @@ JOBS: dict[str, tuple[str, list[str]]] = {
         "盘前 Agent",
         ["scripts/run_premarket_agent.py", "--date", "{date}", "--config", "configs/app.yaml"],
     ),
+    "daily_strategy_recommendation": (
+        "每日单票策略",
+        ["scripts/run_daily_premarket_recommendation.py", "--date", "{date}"],
+    ),
+    "daily_strategy_settlement": (
+        "单票策略结算",
+        ["scripts/run_daily_strategy_settlement.py", "--date", "{date}"],
+    ),
     "intraday": (
         "盘中 Agent",
         ["scripts/run_intraday_agent.py", "--config", "configs/app.yaml", "--demo"],
@@ -240,7 +248,18 @@ def run_job(job: str, request: RunRequest | None = None) -> RunResult:
 def run_all(request: RunRequest | None = None) -> RunAllResult:
     request = request or RunRequest()
     started = time.perf_counter()
-    results = [_run_job(job, request.date) for job in ["premarket", "intraday", "risk", "broker", "review"]]
+    results = [
+        _run_job(job, request.date)
+        for job in [
+            "premarket",
+            "daily_strategy_recommendation",
+            "daily_strategy_settlement",
+            "intraday",
+            "risk",
+            "broker",
+            "review",
+        ]
+    ]
     status = "success" if all(result.status == "success" for result in results) else "failed"
     return RunAllResult(
         status=status,
